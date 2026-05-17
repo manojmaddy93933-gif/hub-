@@ -1,0 +1,10 @@
+{
+  "name": "HUB PERFORMANCE",
+  "description": "A premium performance hub featuring the AURA cafe, game tables, professional car wash services, a luxury birthday theatre hall, and badminton court bookings.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
