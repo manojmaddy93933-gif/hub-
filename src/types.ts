@@ -11,6 +11,7 @@ export interface UserProfile {
 
 export type BookingType = 'game' | 'carWash' | 'badminton' | 'theatre' | 'cafe';
 export type BookingStatus = 'pending' | 'ongoing' | 'completed' | 'cancelled';
+export type BookingPriority = 'low' | 'medium' | 'high';
 
 export enum OperationType {
   CREATE = 'create',
@@ -41,6 +42,7 @@ export interface Booking {
   vehiclePhotoUrl?: string;
   notes?: string;
   status: BookingStatus;
+  priority?: BookingPriority;
   price: number;
   paymentStatus?: 'unpaid' | 'pending' | 'paid';
   paymentMethod?: 'upi' | 'cash' | 'card';
@@ -53,4 +55,50 @@ export interface Booking {
     lastUpdated: number;
     statusUpdate: string;
   };
+}
+
+export interface Worker {
+  id?: string;
+  workerCode: string; // Unique code for attendance (e.g., HUB001)
+  name: string;
+  role: string;
+  contact: string;
+  joiningDate: string;
+  isActive: boolean;
+  createdAt: number;
+}
+
+export interface Attendance {
+  id?: string;
+  workerId: string;
+  workerName: string;
+  date: string; // YYYY-MM-DD
+  checkIn: number; // timestamp
+  checkOut?: number; // timestamp
+  status: 'present' | 'absent' | 'half-day';
+  notes?: string;
+}
+
+export type ShiftType = 'morning' | 'evening' | 'night' | 'full-day';
+ 
+export interface CafeMenuItem {
+  id?: string;
+  name: string;
+  category: string;
+  price: number;
+  imageUrl?: string;
+  isAvailable: boolean;
+  createdAt: number;
+}
+
+export interface StaffSchedule {
+  id?: string;
+  workerId: string;
+  workerName: string;
+  workerRole: string;
+  date: string; // YYYY-MM-DD
+  shift: ShiftType;
+  serviceType?: BookingType;
+  notes?: string;
+  createdAt: number;
 }

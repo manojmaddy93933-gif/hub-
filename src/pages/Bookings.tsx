@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { bookingService } from '../services/bookingService';
+import { playVoice } from '../services/voiceService';
 import { Booking, BookingType, BookingStatus } from '../types';
 import { 
   Gamepad2, 
@@ -40,7 +41,6 @@ const Bookings = () => {
   const [loading, setLoading] = useState(false);
   const [mobileNumber, setMobileNumber] = useState(profile?.mobileNumber || '');
   const [policyAccepted, setPolicyAccepted] = useState(false);
-  const [isStudent, setIsStudent] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
 
   // Form states
@@ -54,7 +54,6 @@ const Bookings = () => {
   const [vehiclePhotoUrl, setVehiclePhotoUrl] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [showQR, setShowQR] = useState<string | null>(null);
-  const [showPaymentQR, setShowPaymentQR] = useState<string | null>(null);
 
   const generateTimeSlots = (open: string, close: string) => {
     const slots = [];
@@ -67,9 +66,38 @@ const Bookings = () => {
     return slots;
   };
 
+  const isFirstLoad = React.useRef(true);
+
   useEffect(() => {
     if (user) {
-      const unsubscribe = bookingService.subscribeToUserBookings(user.uid, setMyBookings);
+      const unsubscribe = bookingService.subscribeToUserBookings(user.uid, (data, changes) => {
+        setMyBookings(data);
+
+        if (isFirstLoad.current) {
+          isFirstLoad.current = false;
+          return;
+        }
+
+        if (changes && Array.isArray(changes)) {
+          changes.forEach(change => {
+            const booking = { id: change.doc.id, ...change.doc.data() } as Booking;
+            if (change.type === 'modified') {
+              // We need to compare with previous state if possible, or just check the new status
+              // Actually, since this is specific to this user, if we see a change to 'cancelled', it's likely a news
+              if (booking.status === 'cancelled') {
+                playVoice("Your order has been cancelled.", 'Kore');
+                try {
+                  const cancelAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/2569/2569-preview.mp3');
+                  cancelAudio.volume = 0.5;
+                  cancelAudio.play().catch(e => console.log('Audio play failed:', e));
+                } catch (err) {
+                  console.error('Audio error:', err);
+                }
+              }
+            }
+          });
+        }
+      });
       return () => unsubscribe();
     }
   }, [user]);
@@ -113,15 +141,11 @@ const Bookings = () => {
       } else if (activeTab === 'theatre') {
         if (resourceId === '1 Hour') price = RATES.THEATRE.rate1h;
         else if (resourceId === '2 Hours') price = RATES.THEATRE.rate2h;
-        else if (resourceId === 'Half Day (4h)') price = RATES.THEATRE.halfDay;
+        else if (resourceId === '5 Hours') price = RATES.THEATRE.rate5h;
         resourceName = `Birthday Theatre (${resourceId})`;
       } else if (activeTab === 'cafe') {
         price = RATES.CAFE.tableBooking;
         resourceName = `AURA Cafe Table (${resourceId})`;
-      }
-
-      if (isStudent) {
-        price = Math.floor(price * 0.9);
       }
 
       const bookingData: any = {
@@ -136,7 +160,7 @@ const Bookings = () => {
         startTime,
         endTime: '', // Calculated on backend or simple offset
         duration: activeTab === 'badminton' ? (resourceId === '2 Hours' ? 2 : 1) : 
-                  activeTab === 'theatre' ? (resourceId === 'Half Day (4h)' ? 4 : (resourceId === '2 Hours' ? 2 : 1)) : 
+                  activeTab === 'theatre' ? (resourceId === '5 Hours' ? 5 : (resourceId === '2 Hours' ? 2 : 1)) : 
                   activeTab === 'cafe' ? 1 : 1,
         status: 'pending',
         price,
@@ -152,15 +176,19 @@ const Bookings = () => {
         if (vehiclePhotoUrl) bookingData.vehiclePhotoUrl = vehiclePhotoUrl;
       }
 
-      if (isStudent) {
-        bookingData.isStudent = true;
-        bookingData.notes = `[STUDENT DISCOUNT 10% APPLIED] ${notes.trim()}`;
+      await bookingService.createBooking(bookingData as Omit<Booking, 'id'>);
+      
+      // Play success sound
+      try {
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+        audio.volume = 0.5;
+        audio.play().catch(e => console.log('Audio play failed:', e));
+      } catch (err) {
+        console.error('Audio error:', err);
       }
 
-      await bookingService.createBooking(bookingData as Omit<Booking, 'id'>);
       alert('Booking successful!');
       setPolicyAccepted(false);
-      setIsStudent(false);
       setResourceId('');
       setVehicleNumber('');
       setVehicleMake('');
@@ -199,6 +227,16 @@ const Bookings = () => {
     }
   };
 
+  const handleCancelBooking = async (id: string) => {
+    if (!window.confirm('Are you sure you want to cancel this booking? This action is subject to our cancellation policy.')) return;
+    try {
+      await bookingService.updateBookingStatus(id, 'cancelled');
+    } catch (error) {
+      console.error(error);
+      alert('Failed to cancel booking.');
+    }
+  };
+
   const getStatusColor = (status: BookingStatus) => {
     switch (status) {
       case 'ongoing': return 'bg-blue-500/10 text-blue-500 border border-blue-500/20';
@@ -209,52 +247,106 @@ const Bookings = () => {
   };
 
   const renderStatusTracking = (booking: Booking) => {
-    if (booking.status !== 'ongoing') return null;
+    if (booking.status === 'cancelled') return null;
+
+    const steps = booking.type === 'carWash' 
+      ? ['Booked', 'Confirmed', 'Washing', 'Polishing', 'Ready']
+      : ['Booked', 'Confirmed', 'Live', 'Completed'];
+
+    const getCurrentStep = () => {
+      if (booking.status === 'pending') return 0;
+      if (booking.status === 'ongoing') {
+        if (booking.type === 'carWash') {
+          return (booking.tracking?.statusUpdate?.toLowerCase().includes('drying') || 
+                  booking.tracking?.statusUpdate?.toLowerCase().includes('polish')) ? 3 : 2;
+        }
+        return 2;
+      }
+      if (booking.status === 'completed') return steps.length - 1;
+      return 0;
+    };
+
+    const currentStepIndex = getCurrentStep();
 
     return (
       <motion.div 
         initial={{ opacity: 0, height: 0 }}
         animate={{ opacity: 1, height: 'auto' }}
-        className="mt-4 p-4 bg-zinc-950/50 rounded-2xl border border-border"
+        className="mt-6 p-6 bg-zinc-950/80 rounded-3xl border border-zinc-800 shadow-inner"
       >
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2 text-accent font-black text-[10px] tracking-widest uppercase">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-accent"></span>
-            </span>
-            LIVE TRACKER
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="relative flex h-3 w-3">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${booking.status === 'ongoing' ? 'bg-blue-500' : 'bg-amber-500'}`}></span>
+              <span className={`relative inline-flex rounded-full h-3 w-3 ${booking.status === 'ongoing' ? 'bg-blue-500' : 'bg-amber-500'}`}></span>
+            </div>
+            <span className="text-slate-100 font-black text-xs tracking-[0.2em] uppercase italic">Real-Time Tracking</span>
           </div>
-          <span className="text-[10px] font-black text-zinc-600 uppercase tracking-widest">
-            {new Date(booking.tracking?.lastUpdated || booking.createdAt).toLocaleTimeString()}
+          <span className="text-[10px] font-black text-zinc-600 uppercase tracking-widest bg-zinc-900 px-3 py-1 rounded-full border border-zinc-800">
+            {new Date(booking.tracking?.lastUpdated || booking.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>
-        
-        <div className="relative pt-1">
-          <div className="flex mb-2 items-center justify-between">
-            <div>
-              <span className="text-[10px] font-black inline-block py-1 px-3 uppercase rounded-full text-blue-400 bg-blue-400/10 tracking-widest">
-                {booking.tracking?.statusUpdate || 'Processing...'}
-              </span>
-            </div>
-            <div className="text-right">
-              <span className="text-[10px] font-black inline-block text-blue-400 tracking-widest opacity-60">
-                ACTIVE
-              </span>
-            </div>
-          </div>
-          <div className="overflow-hidden h-1.5 mb-4 text-xs flex rounded bg-zinc-800">
-            <motion.div 
-              initial={{ width: 0 }}
-              animate={{ width: '68%' }}
-              className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"
-            />
+
+        {/* Improved Progress Stepper */}
+        <div className="relative mb-8 px-2">
+          <div className="absolute top-1/2 left-0 w-full h-[1px] bg-zinc-800 -translate-y-1/2" />
+          <div 
+            className="absolute top-1/2 left-0 h-[2px] bg-accent -translate-y-1/2 transition-all duration-1000"
+            style={{ width: `${(currentStepIndex / (steps.length - 1)) * 100}%` }}
+          />
+          
+          <div className="relative flex justify-between">
+            {steps.map((step, idx) => {
+              const isCompleted = idx < currentStepIndex;
+              const isActive = idx === currentStepIndex;
+              
+              return (
+                <div key={idx} className="flex flex-col items-center">
+                  <div className={`w-3 h-3 rounded-full border-2 transition-all duration-500 z-10 ${
+                    isCompleted ? 'bg-accent border-accent' : 
+                    isActive ? 'bg-zinc-950 border-accent animate-pulse' : 
+                    'bg-zinc-950 border-zinc-800'
+                  }`} />
+                  <span className={`mt-3 text-[8px] font-black uppercase tracking-tighter transition-colors duration-500 whitespace-nowrap ${
+                    isActive ? 'text-accent' : isCompleted ? 'text-slate-400' : 'text-zinc-700'
+                  }`}>
+                    {step}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
+        
+        <div className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Current Status</span>
+            <span className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em]">Live Update</span>
+          </div>
+          <p className="text-sm font-bold text-slate-100 italic">
+            {booking.status === 'pending' ? 'Awaiting slot confirmation from management...' : 
+             booking.status === 'completed' ? 'Your session has been successfully completed in bay.' :
+             booking.tracking?.statusUpdate || 'Service in progress, please wait...'}
+          </p>
+        </div>
 
-        <div className="flex items-center gap-2 text-zinc-500 text-[10px] font-black uppercase tracking-widest">
-          <MapPin size={10} />
-          <span>Hub Location: {booking.bay || 'Station Area'}</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-zinc-500 text-[10px] font-black uppercase tracking-widest">
+            <MapPin size={10} className="text-accent" />
+            <span>{booking.bay || 'Station Area'} • {booking.type === 'carWash' ? 'Detox Bay' : 'Hub Zone'}</span>
+          </div>
+          {booking.status === 'ongoing' && (
+            <div className="flex items-center gap-2">
+              <span className="text-[8px] font-black text-zinc-600 uppercase tracking-[0.3em]">Monitoring</span>
+              <div className="h-1 w-8 bg-zinc-800 rounded-full overflow-hidden">
+                <motion.div 
+                  animate={{ x: [-32, 32] }}
+                  transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                  className="h-full w-full bg-accent"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <LiveTrackingMap status={booking.status} type={booking.type} />
@@ -286,7 +378,7 @@ const Bookings = () => {
           
           <div className="flex-1 text-center md:text-left">
             <h1 className="text-3xl font-black text-slate-100 uppercase tracking-tighter italic">
-              {profile?.displayName || user?.displayName || 'Performance Member'}
+              {profile?.displayName || user?.displayName || 'Hub Member'}
             </h1>
             <p className="text-zinc-500 font-bold uppercase text-xs tracking-widest mt-1">
               {user?.email}
@@ -365,7 +457,7 @@ const Bookings = () => {
                   <>
                     <option value="1 Hour">1 Hour (₹{RATES.THEATRE.rate1h})</option>
                     <option value="2 Hours">2 Hours (₹{RATES.THEATRE.rate2h})</option>
-                    <option value="Half Day (4h)">Half Day (4h) (₹{RATES.THEATRE.halfDay})</option>
+                    <option value="5 Hours">5 Hours (₹{RATES.THEATRE.rate5h})</option>
                   </>
                 )}
                 {activeTab === 'cafe' && (
@@ -578,39 +670,6 @@ const Bookings = () => {
               </div>
             </div>
 
-            {/* Student Discount Toggle */}
-            <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2 text-accent">
-                  <UserIcon size={14} />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-200">Student Discount</span>
-                </div>
-                <div className="bg-accent/10 border border-accent/20 px-2 py-0.5 rounded text-[8px] font-black text-accent uppercase tracking-widest">
-                  -10% FLAT
-                </div>
-              </div>
-              <p className="text-[9px] text-zinc-600 uppercase font-medium tracking-wider mb-4 leading-relaxed">
-                Apply student discount. Valid ID card must be presented at the hub counter during check-in.
-              </p>
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <div className="relative">
-                  <input 
-                    type="checkbox" 
-                    checked={isStudent}
-                    onChange={(e) => setIsStudent(e.target.checked)}
-                    className="peer sr-only"
-                  />
-                  <div className="w-5 h-5 bg-zinc-900 border border-zinc-800 rounded flex items-center justify-center transition-all peer-checked:bg-accent peer-checked:border-accent">
-                    <CheckCircle2 size={12} className="text-zinc-950 opacity-0 peer-checked:opacity-100" />
-                  </div>
-                </div>
-                <span className="text-[10px] font-bold text-zinc-400 group-hover:text-slate-200 transition-colors uppercase tracking-tight">
-                  I am a student (Apply 10% Discount)
-                </span>
-              </label>
-            </div>
-
-            {/* Cancellation Policy */}
             <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl">
               <div className="flex items-center gap-2 mb-3 text-amber-500">
                 <AlertCircle size={14} />
@@ -759,6 +818,16 @@ const Bookings = () => {
                     </span>
                     <div className="flex items-center gap-3">
                       <span className="font-black text-xl italic text-slate-100">₹{booking.price}</span>
+                      {booking.status === 'pending' && historyTab === 'active' && (
+                        <button 
+                          onClick={() => handleCancelBooking(booking.id!)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-500 transition-all hover:text-white group"
+                          title="Cancel Booking"
+                        >
+                          <X size={12} className="group-hover:rotate-90 transition-transform" />
+                          Cancel
+                        </button>
+                      )}
                       {historyTab === 'history' && (
                         <button 
                           onClick={() => handleDeleteBooking(booking.id!)}
@@ -773,30 +842,16 @@ const Bookings = () => {
 
                 {/* QR Code Actions */}
                 {!['completed', 'cancelled'].includes(booking.status) && (
-                  <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="mt-4">
                     <button 
                       onClick={() => {
                         setShowQR(showQR === booking.id ? null : booking.id!);
-                        setShowPaymentQR(null);
                       }}
-                      className="flex-1 py-4 bg-zinc-950 border border-zinc-800 rounded-2xl flex items-center justify-center gap-3 hover:border-accent/40 transition-all group/qr"
+                      className="w-full py-4 bg-zinc-950 border border-zinc-800 rounded-2xl flex items-center justify-center gap-3 hover:border-accent/40 transition-all group/qr"
                     >
                       <QrCode size={18} className="text-zinc-600 group-hover/qr:text-accent transition-colors" />
                       <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest group-hover/qr:text-slate-100">
                         {showQR === booking.id ? 'Hide ID' : 'Check-in QR'}
-                      </span>
-                    </button>
-
-                    <button 
-                      onClick={() => {
-                        setShowPaymentQR(showPaymentQR === booking.id ? null : booking.id!);
-                        setShowQR(null);
-                      }}
-                      className="flex-1 py-4 bg-zinc-950 border border-zinc-800 rounded-2xl flex items-center justify-center gap-3 hover:border-green-500/40 transition-all group/pay"
-                    >
-                      <IndianRupee size={18} className="text-zinc-600 group-hover/pay:text-green-500 transition-colors" />
-                      <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest group-hover/pay:text-slate-100">
-                        {showPaymentQR === booking.id ? 'Hide Pay' : 'Scan & Pay'}
                       </span>
                     </button>
                   </div>
@@ -823,19 +878,6 @@ const Bookings = () => {
                           <div className="mt-2 text-[8px] font-bold text-zinc-400 uppercase tracking-widest leading-none">
                             Booking ID: {booking.id?.slice(-8).toUpperCase()}
                           </div>
-                      </div>
-                    </motion.div>
-                  )}
-                  
-                  {showPaymentQR === booking.id && (
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.95, height: 0 }}
-                      animate={{ opacity: 1, scale: 1, height: 'auto' }}
-                      exit={{ opacity: 0, scale: 0.95, height: 0 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="mt-4">
-                        <PaymentQR amount={booking.price} bookingId={booking.id!} />
                       </div>
                     </motion.div>
                   )}

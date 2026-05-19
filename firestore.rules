@@ -90,5 +90,20 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+
+    // --- Worker Rules ---
+    match /workers/{workerId} {
+      allow read, write: if isAdmin();
+    }
+
+    // --- Attendance Rules ---
+    match /attendance/{attendanceId} {
+      allow read, write: if isAdmin();
+    }
+
+    // --- Schedule Rules ---
+    match /schedules/{scheduleId} {
+      allow read, write: if isAdmin();
+    }
   }
 }

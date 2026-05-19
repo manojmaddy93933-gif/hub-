@@ -7,7 +7,7 @@ export const emailService = {
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; background: #000; color: #fff; padding: 40px; border-radius: 20px;">
         <h1 style="color: #ef4444; margin-bottom: 24px;">Booking Confirmed!</h1>
         <p style="font-size: 16px; color: #a1a1aa;">Hi ${booking.userName},</p>
-        <p style="font-size: 16px; color: #a1a1aa;">Your booking at <strong>Hub Performance</strong> has been successfully confirmed.</p>
+        <p style="font-size: 16px; color: #a1a1aa;">Your booking at <strong>Hub Station</strong> has been successfully confirmed.</p>
         
         <div style="background: #18181b; padding: 24px; border-radius: 12px; margin: 24px 0;">
           <h2 style="font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em; color: #71717a; margin: 0 0 16px 0;">Booking Details</h2>
@@ -43,7 +43,7 @@ export const emailService = {
           If you have any questions, feel free to contact us at contact@hubcafe.com or call 7780228894.
         </p>
         <div style="margin-top: 40px; border-top: 1px solid #27272a; pt-20">
-          <p style="font-size: 12px; color: #52525b; text-align: center;">Hub Performance - Premium Experience</p>
+          <p style="font-size: 12px; color: #52525b; text-align: center;">Hub Station - Premium Experience</p>
         </div>
       </div>
     `;
@@ -70,7 +70,7 @@ export const emailService = {
           You can track your service live on our dashboard.
         </p>
         <div style="margin-top: 40px; border-top: 1px solid #27272a; pt-20">
-          <p style="font-size: 12px; color: #52525b; text-align: center;">Hub Performance - Premium Experience</p>
+          <p style="font-size: 12px; color: #52525b; text-align: center;">Hub Station - Premium Experience</p>
         </div>
       </div>
     `;

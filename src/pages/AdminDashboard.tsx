@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { bookingService } from '../services/bookingService';
-import { Booking, BookingStatus } from '../types';
+import { attendanceService } from '../services/attendanceService';
+import { cafeService } from '../services/cafeService';
+import { playVoice } from '../services/voiceService';
+import { Booking, BookingStatus, BookingPriority, BookingType, Worker, Attendance, StaffSchedule, CafeMenuItem } from '../types';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 import { 
   Users, 
   Clock, 
@@ -13,6 +17,7 @@ import {
   MapPin,
   ChevronDown,
   QrCode,
+  Scan,
   IndianRupee,
   Lock,
   ArrowRight,
@@ -26,7 +31,21 @@ import {
   Info,
   Bell,
   BellRing,
-  Trash2
+  Trash2,
+  Gamepad2,
+  Car,
+  Trophy,
+  Monitor,
+  Coffee,
+  Calendar as CalendarIcon,
+  ChevronLeft,
+  ChevronRight,
+  UserCheck,
+  UserMinus,
+  Briefcase,
+  Plus,
+  AlertTriangle,
+  Fingerprint
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PaymentQR from '../components/PaymentQR';
@@ -39,14 +58,60 @@ interface Notification {
   time: number;
 }
 
+const getServiceDisplayName = (type: string) => {
+  const types: Record<string, string> = {
+    'game': 'Game',
+    'carWash': 'Car Wash',
+    'badminton': 'Badminton',
+    'theatre': 'Theatre',
+    'cafe': 'Cafe'
+  };
+  return types[type] || type;
+};
+
+const getServiceIcon = (type: string, size = 20) => {
+  switch (type) {
+    case 'game': return <Gamepad2 size={size} />;
+    case 'carWash': return <Car size={size} />;
+    case 'badminton': return <Trophy size={size} />;
+    case 'theatre': return <Monitor size={size} />;
+    case 'cafe': return <Coffee size={size} />;
+    default: return <Users size={size} />;
+  }
+};
+
+const getServiceColor = (type: string) => {
+  switch (type) {
+    case 'game': return 'bg-blue-500';
+    case 'carWash': return 'bg-accent';
+    case 'badminton': return 'bg-emerald-500';
+    case 'theatre': return 'bg-purple-500';
+    case 'cafe': return 'bg-amber-500';
+    default: return 'bg-zinc-500';
+  }
+};
+
+const getServiceTextColor = (type: string) => {
+  switch (type) {
+    case 'game': return 'text-blue-500';
+    case 'carWash': return 'text-accent';
+    case 'badminton': return 'text-emerald-500';
+    case 'theatre': return 'text-purple-500';
+    case 'cafe': return 'text-amber-500';
+    default: return 'text-zinc-500';
+  }
+};
+
 const AdminDashboard = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [filter, setFilter] = useState<BookingStatus | 'all'>('all');
+  const [typeFilter, setTypeFilter] = useState<BookingType | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [updateTrackingId, setUpdateTrackingId] = useState<string | null>(null);
   const [assignBayBookingId, setAssignBayBookingId] = useState<string | null>(null);
   const [trackingNote, setTrackingNote] = useState('');
   const [showAdminPaymentQR, setShowAdminPaymentQR] = useState<{ amount?: number; bookingId?: string } | boolean>(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [successAnimationId, setSuccessAnimationId] = useState<string | null>(null);
   
   // Security State
@@ -55,6 +120,76 @@ const AdminDashboard = () => {
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'last7' | 'custom'>('all');
+  const [customRange, setCustomRange] = useState({ start: '', end: '' });
+  const [activeView, setActiveView] = useState<'bookings' | 'payments' | 'calendar' | 'workers' | 'cafeMenu'>('bookings');
+  const [selectedBookings, setSelectedBookings] = useState<string[]>([]);
+  const [viewDate, setViewDate] = useState(new Date());
+  
+  // Workers Attendance State
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [schedules, setSchedules] = useState<StaffSchedule[]>([]);
+  const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [workerSubView, setWorkerSubView] = useState<'attendance' | 'schedule'>('attendance');
+  const [showAddWorker, setShowAddWorker] = useState(false);
+  const [showAddSchedule, setShowAddSchedule] = useState(false);
+  const [newWorker, setNewWorker] = useState({ 
+    name: '', 
+    role: '', 
+    contact: '', 
+    workerCode: '',
+    joiningDate: new Date().toISOString().split('T')[0] 
+  });
+  const [newSchedule, setNewSchedule] = useState<Omit<StaffSchedule, 'id' | 'createdAt'>>({
+    workerId: '',
+    workerName: '',
+    workerRole: '',
+    date: new Date().toISOString().split('T')[0],
+    shift: 'morning',
+    serviceType: undefined,
+    notes: ''
+  });
+  const [isSubmittingWorker, setIsSubmittingWorker] = useState(false);
+  const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false);
+
+  // Cafe Menu State
+  const [menuItems, setMenuItems] = useState<CafeMenuItem[]>([]);
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const [editingMenuItem, setEditingMenuItem] = useState<CafeMenuItem | null>(null);
+  const [newMenuItem, setNewMenuItem] = useState({ name: '', category: '', price: 0, imageUrl: '', isAvailable: true });
+  const [isSubmittingMenu, setIsSubmittingMenu] = useState(false);
+
+  useEffect(() => {
+    if (isScannerOpen) {
+      const scanner = new Html5QrcodeScanner(
+        "qr-reader",
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        /* verbose= */ false
+      );
+
+      const onScanSuccess = (decodedText: string) => {
+        handleScanResult(decodedText);
+        scanner.clear();
+      };
+
+      const onScanFailure = (error: any) => {
+        // quiet fail
+      };
+
+      scanner.render(onScanSuccess, onScanFailure);
+
+      return () => {
+        scanner.clear().catch(err => console.log("Failed to clear scanner", err));
+      };
+    }
+  }, [isScannerOpen]);
+
+  const handleScanResult = (result: string) => {
+    setIsScannerOpen(false);
+    setSearchTerm(result);
+  };
+
   const isFirstLoad = React.useRef(true);
 
   useEffect(() => {
@@ -73,21 +208,54 @@ const AdminDashboard = () => {
           const booking = { id: change.doc.id, ...change.doc.data() } as Booking;
           
           if (change.type === 'added') {
+            const isCafeOrder = booking.type === 'cafe';
             addNotification({
               id: `new-${booking.id}-${Date.now()}`,
-              title: 'New Booking',
-              message: `${booking.userName} reserved ${booking.resourceName}`,
+              title: isCafeOrder ? '☕ NEW CAFE ORDER' : `New Booking: ${booking.userName} - ${getServiceDisplayName(booking.type)}`,
+              message: isCafeOrder ? `${booking.userName} ordered ${booking.resourceName}` : `Reserved ${booking.resourceName}`,
               type: 'new',
               time: Date.now()
             });
+
+            if (isCafeOrder) {
+              playVoice(`New cafe order from ${booking.userName}.`, 'Puck');
+              try {
+                const cafeAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/1117/1117-preview.mp3'); // Ding sound
+                cafeAudio.volume = 0.6;
+                cafeAudio.play().catch(e => console.log('Audio play failed:', e));
+              } catch (err) {
+                console.error('Audio error:', err);
+              }
+            }
           } else if (change.type === 'modified') {
-            addNotification({
-              id: `update-${booking.id}-${Date.now()}`,
-              title: 'Status Updated',
-              message: `${booking.userName}'s ${booking.type} is now ${booking.status}`,
-              type: 'update',
-              time: Date.now()
-            });
+            const oldBooking = bookings.find(b => b.id === booking.id);
+            if (oldBooking && oldBooking.status !== 'cancelled' && booking.status === 'cancelled') {
+              // Special notification for cancellation
+              addNotification({
+                id: `cancel-${booking.id}-${Date.now()}`,
+                title: 'Booking Cancelled',
+                message: `${booking.userName}'s order for ${booking.resourceName} has been cancelled.`,
+                type: 'update',
+                time: Date.now()
+              });
+              playVoice("Attention. An order has been cancelled.", 'Zephyr');
+              // Specific cancellation sound
+              try {
+                const cancelAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/2569/2569-preview.mp3');
+                cancelAudio.volume = 0.5;
+                cancelAudio.play().catch(e => console.log('Audio play failed:', e));
+              } catch (err) {
+                console.error('Audio error:', err);
+              }
+            } else {
+              addNotification({
+                id: `update-${booking.id}-${Date.now()}`,
+                title: 'Status Updated',
+                message: `${booking.userName}'s ${booking.type} is now ${booking.status}`,
+                type: 'update',
+                time: Date.now()
+              });
+            }
           }
         });
       }
@@ -95,8 +263,93 @@ const AdminDashboard = () => {
     return () => unsubscribe();
   }, [isVerified]);
 
+  // Overdue Monitor to alert admin of missed schedules
+  const alertedOverdueRef = React.useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!isVerified || bookings.length === 0) return;
+
+    const checkOverdue = async () => {
+      const now = new Date();
+      // Only check today's bookings that are past their start time
+      const today = now.toISOString().split('T')[0];
+      
+      const overdueBookings = bookings.filter(b => {
+        if (!['pending', 'ongoing'].includes(b.status)) return false;
+        if (b.date !== today) return false; // Only automated alerts for current day
+        if (alertedOverdueRef.current.has(b.id!)) return false;
+
+        try {
+          const scheduledTime = new Date(`${b.date}T${b.startTime}`);
+          // Consider overdue if more than 15 minutes past scheduled start
+          return scheduledTime.getTime() + (15 * 60 * 1000) < now.getTime();
+        } catch (e) {
+          return false;
+        }
+      });
+
+      for (const booking of overdueBookings) {
+        alertedOverdueRef.current.add(booking.id!);
+        
+        // Show UI Notification
+        addNotification({
+          id: `overdue-${booking.id}-${Date.now()}`,
+          title: '⚠️ OVERDUE ALERT',
+          message: `${booking.userName}'s session is past scheduled time!`,
+          type: 'cancel', 
+          time: Date.now()
+        });
+
+        // Voice Alert
+        playVoice(`Attention. ${booking.userName}'s ${getServiceDisplayName(booking.type)} is now overdue.`, 'Zephyr');
+
+        // Email Alert to Admin
+        try {
+          await fetch('/api/send-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to: 'admin@hubstation.com', // fallback or real admin email
+              subject: `⚠️ OVERDUE ACTION REQUIRED: ${booking.userName}`,
+              html: `
+                <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 15px; background-color: #fafafa;">
+                  <h2 style="color: #e11d48; margin-top: 0;">Automated Overdue Alert</h2>
+                  <p style="color: #444;">The following booking is past its scheduled start time and requires immediate attention.</p>
+                  <div style="background: white; padding: 15px; border-radius: 10px; border: 1px solid #ddd;">
+                    <p style="margin: 5px 0;"><strong>Customer:</strong> ${booking.userName}</p>
+                    <p style="margin: 5px 0;"><strong>Service:</strong> ${getServiceDisplayName(booking.type)}</p>
+                    <p style="margin: 5px 0;"><strong>Scheduled:</strong> ${booking.date} at ${booking.startTime}</p>
+                    <p style="margin: 5px 0;"><strong>Current Status:</strong> <span style="text-transform: uppercase; color: #f59e0b;">${booking.status}</span></p>
+                  </div>
+                  <p style="font-size: 12px; color: #888; margin-top: 20px;">This is an automated system notification from Hub Station HQ.</p>
+                </div>
+              `
+            })
+          });
+        } catch (err) {
+          console.error('Failed to send overdue email notification:', err);
+        }
+      }
+    };
+
+    const interval = setInterval(checkOverdue, 60000); // Check every minute
+    checkOverdue();
+
+    return () => clearInterval(interval);
+  }, [isVerified, bookings]);
+
   const addNotification = (notif: Notification) => {
     setNotifications(prev => [notif, ...prev].slice(0, 5));
+    
+    // Play notification sound
+    try {
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3');
+      audio.volume = 0.4;
+      audio.play().catch(e => console.log('Audio play failed:', e));
+    } catch (err) {
+      console.error('Audio error:', err);
+    }
+
     // Auto remove after 5 seconds
     setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== notif.id));
@@ -161,6 +414,203 @@ const AdminDashboard = () => {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (activeView === 'workers' && isVerified) {
+      const fetchData = async () => {
+        try {
+          const workersList = await attendanceService.getAllWorkers();
+          setWorkers(workersList);
+          const attendanceList = await attendanceService.getAttendanceByDate(attendanceDate);
+          setAttendance(attendanceList);
+          const schedulesList = await attendanceService.getSchedulesByDate(attendanceDate);
+          setSchedules(schedulesList);
+        } catch (error) {
+          console.error('Error fetching workers/attendance/schedules:', error);
+        }
+      };
+      fetchData();
+    }
+  }, [activeView, attendanceDate, isVerified]);
+
+  useEffect(() => {
+    if (activeView === 'cafeMenu' && isVerified) {
+      const unsubscribe = cafeService.subscribeMenuItems((items) => {
+        setMenuItems(items);
+      });
+      return () => unsubscribe();
+    }
+  }, [activeView, isVerified]);
+
+  const toggleBookingSelection = (id: string) => {
+    setSelectedBookings(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleAllSelection = () => {
+    if (selectedBookings.length === filteredBookings.length) {
+      setSelectedBookings([]);
+    } else {
+      setSelectedBookings(filteredBookings.map(b => b.id!));
+    }
+  };
+
+  const handleBulkStatusUpdate = async (status: BookingStatus) => {
+    if (!window.confirm(`Update ${selectedBookings.length} bookings to ${status}?`)) return;
+    try {
+      const promises = selectedBookings.map(id => bookingService.updateBookingStatus(id, status));
+      await Promise.all(promises);
+      setSelectedBookings([]);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Permanently delete ${selectedBookings.length} records?`)) return;
+    try {
+      const promises = selectedBookings.map(id => bookingService.deleteBooking(id));
+      await Promise.all(promises);
+      setSelectedBookings([]);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleAddWorker = async () => {
+    if (!newWorker.name || !newWorker.role) return;
+    setIsSubmittingWorker(true);
+    try {
+      await attendanceService.addWorker({
+        name: newWorker.name,
+        role: newWorker.role,
+        contact: newWorker.contact,
+        workerCode: newWorker.workerCode.toUpperCase() || `HUB${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`,
+        joiningDate: newWorker.joiningDate,
+        isActive: true,
+        createdAt: Date.now()
+      });
+      setNewWorker({ 
+        name: '', 
+        role: '', 
+        contact: '', 
+        workerCode: '',
+        joiningDate: new Date().toISOString().split('T')[0] 
+      });
+      setShowAddWorker(false);
+      const workersList = await attendanceService.getAllWorkers();
+      setWorkers(workersList);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsSubmittingWorker(false);
+    }
+  };
+
+  const handleMarkAttendance = async (workerId: string, workerName: string, status: 'present' | 'absent' | 'half-day') => {
+    try {
+      await attendanceService.markAttendance({
+        workerId,
+        workerName,
+        date: attendanceDate,
+        status,
+        checkIn: Date.now()
+      });
+      const attendanceList = await attendanceService.getAttendanceByDate(attendanceDate);
+      setAttendance(attendanceList);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleDeleteWorker = async (id: string) => {
+    if (!window.confirm('Remove this employee from the system? Historical attendance will be preserved.')) return;
+    try {
+      await attendanceService.deleteWorker(id);
+      const workersList = await attendanceService.getAllWorkers();
+      setWorkers(workersList);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleAddSchedule = async () => {
+    if (!newSchedule.workerId || !newSchedule.shift) return;
+    setIsSubmittingSchedule(true);
+    try {
+      await attendanceService.addSchedule({
+        ...newSchedule,
+        createdAt: Date.now()
+      } as any);
+      setShowAddSchedule(false);
+      setNewSchedule({
+        ...newSchedule,
+        workerId: '',
+        workerName: '',
+        workerRole: '',
+        notes: ''
+      });
+      const schedulesList = await attendanceService.getSchedulesByDate(attendanceDate);
+      setSchedules(schedulesList);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsSubmittingSchedule(false);
+    }
+  };
+
+  const handleDeleteSchedule = async (id: string) => {
+    try {
+      await attendanceService.deleteSchedule(id);
+      const schedulesList = await attendanceService.getSchedulesByDate(attendanceDate);
+      setSchedules(schedulesList);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleAddMenuItem = async () => {
+    if (!newMenuItem.name || !newMenuItem.category || newMenuItem.price <= 0) return;
+    setIsSubmittingMenu(true);
+    try {
+      if (editingMenuItem) {
+        await cafeService.updateMenuItem(editingMenuItem.id!, {
+          ...newMenuItem,
+          price: Number(newMenuItem.price)
+        });
+      } else {
+        await cafeService.addMenuItem({
+          ...newMenuItem,
+          price: Number(newMenuItem.price)
+        });
+      }
+      setShowAddMenu(false);
+      setEditingMenuItem(null);
+      setNewMenuItem({ name: '', category: '', price: 0, imageUrl: '', isAvailable: true });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsSubmittingMenu(false);
+    }
+  };
+
+  const handleDeleteMenuItem = async (id: string) => {
+    if (!window.confirm('Delete this item from the menu?')) return;
+    try {
+      await cafeService.deleteMenuItem(id);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleToggleMenuAvailability = async (id: string, currentStatus: boolean) => {
+    try {
+      await cafeService.toggleAvailability(id, currentStatus);
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   if (!isVerified) {
     return (
@@ -246,6 +696,21 @@ const AdminDashboard = () => {
       paymentMethod 
     });
   };
+  
+  const handlePriorityUpdate = async (id: string, priority: BookingPriority) => {
+    await bookingService.updateBookingStatus(id, bookings.find(b => b.id === id)?.status || 'pending', { 
+      priority
+    });
+  };
+
+  const getPriorityColor = (priority?: BookingPriority) => {
+    switch (priority) {
+      case 'high': return 'bg-red-500/10 text-red-500 border-red-500/20';
+      case 'medium': return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
+      case 'low': return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
+      default: return 'bg-zinc-800 text-zinc-500 border-zinc-700/50';
+    }
+  };
 
   const handleStartCarWash = async (bookingId: string, bay: string) => {
     await handleStatusUpdate(bookingId, 'ongoing', { 
@@ -271,6 +736,29 @@ const AdminDashboard = () => {
 
   const filteredBookings = bookings.filter(b => {
     const matchesFilter = filter === 'all' || b.status === filter;
+    const matchesType = typeFilter === 'all' || b.type === typeFilter;
+    
+    let matchesDate = true;
+    const today = new Date();
+    const tzoffset = today.getTimezoneOffset() * 60000; 
+    const localToday = (new Date(today.getTime() - tzoffset)).toISOString().split('T')[0];
+    
+    if (dateFilter === 'today') {
+      matchesDate = b.date === localToday;
+    } else if (dateFilter === 'last7') {
+      const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const localSevenDaysAgo = (new Date(sevenDaysAgo.getTime() - tzoffset)).toISOString().split('T')[0];
+      matchesDate = b.date >= localSevenDaysAgo && b.date <= localToday;
+    } else if (dateFilter === 'custom') {
+      if (customRange.start && customRange.end) {
+        matchesDate = b.date >= customRange.start && b.date <= customRange.end;
+      } else if (customRange.start) {
+        matchesDate = b.date >= customRange.start;
+      } else if (customRange.end) {
+        matchesDate = b.date <= customRange.end;
+      }
+    }
+
     const searchLower = searchTerm.toLowerCase();
     const matchesSearch = 
       b.userName.toLowerCase().includes(searchLower) || 
@@ -278,7 +766,8 @@ const AdminDashboard = () => {
       (b.id || '').toLowerCase().includes(searchLower) ||
       (b.userPhone || '').toLowerCase().includes(searchLower) ||
       (b.userEmail || '').toLowerCase().includes(searchLower);
-    return matchesFilter && matchesSearch;
+      
+    return matchesFilter && matchesType && matchesDate && matchesSearch;
   });
 
   const stats = {
@@ -286,7 +775,22 @@ const AdminDashboard = () => {
     pending: bookings.filter(b => b.status === 'pending').length,
     ongoing: bookings.filter(b => b.status === 'ongoing').length,
     completed: bookings.filter(b => b.status === 'completed').length,
+    totalRevenue: bookings.filter(b => b.paymentStatus === 'paid').reduce((sum, b) => sum + (b.price || 0), 0)
   };
+
+  const serviceWiseStats = ['game', 'carWash', 'badminton', 'theatre', 'cafe'].map(type => {
+    const serviceBookings = bookings.filter(b => b.type === type);
+    const revenue = serviceBookings
+      .filter(b => b.paymentStatus === 'paid')
+      .reduce((sum, b) => sum + (b.price || 0), 0);
+    
+    return {
+      type,
+      label: getServiceDisplayName(type) === type ? type.charAt(0).toUpperCase() + type.slice(1) : getServiceDisplayName(type),
+      count: serviceBookings.length,
+      revenue
+    };
+  }).sort((a, b) => b.revenue - a.revenue);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-12">
@@ -367,11 +871,88 @@ const AdminDashboard = () => {
             </div>
             <div className="w-px h-8 bg-zinc-800" />
             <div className="text-center">
-              <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-black mb-1">Total</p>
-              <p className="text-2xl font-black text-slate-100 leading-none">{stats.total}</p>
+              <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-black mb-1">Revenue</p>
+              <p className="text-2xl font-black text-emerald-500 leading-none">₹{stats.totalRevenue}</p>
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Service Statistics Analytics */}
+      <section className="mb-12">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-accent">
+            <Info size={20} />
+          </div>
+          <div>
+            <h3 className="text-lg font-black text-slate-100 uppercase tracking-tighter italic">Service Insights</h3>
+            <p className="text-[8px] font-bold text-zinc-500 uppercase tracking-[0.2em]">Cross-department performance metrics</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {serviceWiseStats.map((s, idx) => (
+            <motion.div 
+              key={s.type}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.05 }}
+              className="bg-zinc-900 border border-zinc-800 rounded-[1.5rem] p-5 hover:border-accent/30 transition-all group"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-10 h-10 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-700 group-hover:text-accent group-hover:bg-accent/10 transition-colors">
+                  {getServiceIcon(s.type, 20)}
+                </div>
+                <div className="text-right">
+                  <p className="text-[8px] font-black text-zinc-600 uppercase tracking-widest leading-none mb-1">Bookings</p>
+                  <p className="text-lg font-black text-slate-100 italic">{s.count}</p>
+                </div>
+              </div>
+              <div className="pt-4 border-t border-zinc-800/50">
+                <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-1">{s.label} Revenue</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-black text-emerald-500 italic">₹{s.revenue}</p>
+                  <div className="text-[8px] font-bold text-zinc-700 px-2 py-0.5 bg-zinc-950 rounded-md border border-zinc-800">
+                    {s.count > 0 ? Math.round((s.revenue / stats.totalRevenue || 1) * 100) : 0}% share
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      <div className="flex gap-4 mb-8 border-b border-zinc-800">
+        <button 
+          onClick={() => setActiveView('bookings')}
+          className={`pb-4 px-6 text-sm font-black uppercase tracking-widest transition-all ${activeView === 'bookings' ? 'text-accent border-b-2 border-accent' : 'text-zinc-600 hover:text-zinc-400'}`}
+        >
+          Bookings
+        </button>
+        <button 
+          onClick={() => setActiveView('calendar')}
+          className={`pb-4 px-6 text-sm font-black uppercase tracking-widest transition-all ${activeView === 'calendar' ? 'text-accent border-b-2 border-accent' : 'text-zinc-600 hover:text-zinc-400'}`}
+        >
+          Calendar
+        </button>
+        <button 
+          onClick={() => setActiveView('payments')}
+          className={`pb-4 px-6 text-sm font-black uppercase tracking-widest transition-all ${activeView === 'payments' ? 'text-accent border-b-2 border-accent' : 'text-zinc-600 hover:text-zinc-400'}`}
+        >
+          Payment History
+        </button>
+        <button 
+          onClick={() => setActiveView('workers')}
+          className={`pb-4 px-6 text-sm font-black uppercase tracking-widest transition-all ${activeView === 'workers' ? 'text-accent border-b-2 border-accent' : 'text-zinc-600 hover:text-zinc-400'}`}
+        >
+          Attendance
+        </button>
+        <button 
+          onClick={() => setActiveView('cafeMenu')}
+          className={`pb-4 px-6 text-sm font-black uppercase tracking-widest transition-all ${activeView === 'cafeMenu' ? 'text-accent border-b-2 border-accent' : 'text-zinc-600 hover:text-zinc-400'}`}
+        >
+          Cafe Menu
+        </button>
       </div>
 
       <AnimatePresence>
@@ -405,41 +986,150 @@ const AdminDashboard = () => {
             </div>
           </motion.div>
         )}
+
+        {isScannerOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-zinc-950/90 backdrop-blur-md"
+          >
+            <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 shadow-2xl overflow-hidden relative">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-xl font-black text-slate-100 uppercase tracking-tighter italic">QR SCANNER</h3>
+                  <p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Scan customer booking ID</p>
+                </div>
+                <button 
+                  onClick={() => setIsScannerOpen(false)}
+                  className="p-3 bg-zinc-800 text-zinc-400 rounded-2xl hover:text-slate-100"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+
+              <div id="qr-reader" className="bg-zinc-800 rounded-2xl overflow-hidden border border-zinc-700 min-h-[300px]"></div>
+              
+              <div className="mt-8 p-4 bg-zinc-950/50 rounded-2xl border border-zinc-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Position QR code within the frame</p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
-      <div className="flex flex-col md:flex-row gap-4 mb-8">
-        <div className="relative flex-1">
-          <Search className="absolute left-4 top-3.5 text-zinc-600" size={18} />
-          <input 
-            type="text" 
-            placeholder="Search bookings..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="input-field pl-12"
-          />
-        </div>
-        <div className="flex gap-2 p-1 bg-zinc-900 rounded-2xl border border-zinc-800">
-          {(['all', 'pending', 'ongoing', 'completed'] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                filter === s ? 'bg-accent text-zinc-950' : 'hover:bg-zinc-800 text-zinc-500'
-              }`}
+      {activeView === 'bookings' ? (
+        <>
+      <div className="flex flex-col gap-4 mb-8">
+        <div className="flex flex-col md:flex-row gap-4 items-center">
+          <div className="flex items-center gap-3 px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-2xl h-full">
+            <input 
+              type="checkbox" 
+              checked={selectedBookings.length === filteredBookings.length && filteredBookings.length > 0}
+              onChange={toggleAllSelection}
+              className="w-5 h-5 accent-accent cursor-pointer"
+            />
+            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest whitespace-nowrap">Select All</span>
+          </div>
+          <div className="relative flex-1 w-full flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-3.5 text-zinc-600" size={18} />
+              <input 
+                type="text" 
+                placeholder="Search bookings..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="input-field pl-12"
+              />
+            </div>
+            <button 
+              onClick={() => setIsScannerOpen(true)}
+              className="flex items-center gap-3 px-6 py-3 bg-zinc-900 border border-zinc-800 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:border-accent hover:text-accent transition-all whitespace-nowrap"
             >
-              {s}
+              <Scan size={16} />
+              Scan QR
             </button>
-          ))}
+          </div>
+          <div className="flex gap-2 p-1 bg-zinc-900 rounded-2xl border border-zinc-800 overflow-x-auto">
+            {(['all', 'today', 'last7', 'custom'] as const).map((df) => (
+              <button
+                key={df}
+                onClick={() => setDateFilter(df)}
+                className={`whitespace-nowrap px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  dateFilter === df ? 'bg-zinc-800 text-slate-100' : 'hover:bg-zinc-800 border-transparent text-zinc-500'
+                }`}
+              >
+                {df === 'last7' ? 'Last 7 Days' : df}
+              </button>
+            ))}
+          </div>
         </div>
-        {(filter === 'completed' || filter === 'all') && bookings.some(b => ['completed', 'cancelled'].includes(b.status)) && (
-          <button 
-            onClick={handleClearHistory}
-            className="flex items-center gap-2 px-6 py-4 rounded-[2rem] border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/10 transition-all font-black text-[10px] uppercase tracking-widest"
+
+        {dateFilter === 'custom' && (
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="flex gap-4 items-center overflow-hidden"
           >
-            <Trash2 size={16} />
-            Clear History
-          </button>
+            <input 
+              type="date"
+              className="input-field max-w-[200px]"
+              value={customRange.start}
+              onChange={(e) => setCustomRange({ ...customRange, start: e.target.value })}
+            />
+            <span className="text-zinc-500 font-bold uppercase text-[10px]">TO</span>
+            <input 
+              type="date"
+              className="input-field max-w-[200px]"
+              value={customRange.end}
+              onChange={(e) => setCustomRange({ ...customRange, end: e.target.value })}
+            />
+          </motion.div>
         )}
+
+        <div className="flex flex-col md:flex-row gap-4 justify-between">
+          <div className="flex gap-2 p-1 bg-zinc-900 rounded-2xl border border-zinc-800 flex-1 overflow-x-auto">
+            {(['all', 'game', 'carWash', 'badminton', 'theatre', 'cafe'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTypeFilter(t as BookingType | 'all')}
+                className={`whitespace-nowrap flex-1 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  typeFilter === t ? 'bg-blue-500 text-white' : 'hover:bg-zinc-800 text-zinc-500'
+                }`}
+              >
+                {t === 'carWash' ? 'CAR WASH' : t === 'all' ? 'ALL SERVICES' : t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col md:flex-row gap-4 justify-between">
+          <div className="flex gap-2 p-1 bg-zinc-900 rounded-2xl border border-zinc-800 flex-1 overflow-x-auto">
+            {(['all', 'pending', 'ongoing', 'completed', 'cancelled'] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setFilter(s as BookingStatus | 'all')}
+                className={`whitespace-nowrap flex-1 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  filter === s ? 'bg-accent text-zinc-950' : 'hover:bg-zinc-800 text-zinc-500'
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          {(filter === 'completed' || filter === 'all') && bookings.some(b => ['completed', 'cancelled'].includes(b.status)) && (
+            <button 
+              onClick={handleClearHistory}
+              className="flex items-center justify-center gap-2 px-6 py-4 rounded-[2rem] border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/10 transition-all font-black text-[10px] uppercase tracking-widest shrink-0"
+            >
+              <Trash2 size={16} />
+              Clear History
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
@@ -447,17 +1137,37 @@ const AdminDashboard = () => {
           <motion.div 
             key={booking.id}
             layout
-            className="bg-zinc-900 rounded-[2.5rem] p-8 border border-zinc-800 group hover:border-accent/30 transition-all shadow-sm"
+            className={`bg-zinc-900 rounded-[2.5rem] p-8 border transition-all shadow-sm relative overflow-hidden ${
+              selectedBookings.includes(booking.id!) ? 'border-accent ring-1 ring-accent/30' : 'border-zinc-800'
+            }`}
           >
-            <div className="flex flex-wrap items-center justify-between gap-6">
+            {/* Selection Checkbox */}
+            <div className="absolute top-8 left-8 z-10">
+              <input 
+                type="checkbox" 
+                checked={selectedBookings.includes(booking.id!)}
+                onChange={() => toggleBookingSelection(booking.id!)}
+                className="w-6 h-6 accent-accent cursor-pointer opacity-0 group-hover:opacity-100 peer"
+              />
+              <div className={`w-6 h-6 rounded-lg pointer-events-none flex items-center justify-center transition-all ${
+                selectedBookings.includes(booking.id!) ? 'bg-accent border-accent' : 'bg-zinc-950 border border-zinc-700'
+              }`}>
+                {selectedBookings.includes(booking.id!) && <CheckCircle2 size={14} className="text-zinc-950" />}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-6 pl-12">
               <div className="flex items-center gap-6">
                 <div className="w-16 h-16 rounded-[1.5rem] bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-700 group-hover:text-accent group-hover:bg-accent/10 transition-colors">
-                  <Users size={32} />
+                  {getServiceIcon(booking.type, 32)}
                 </div>
                 <div>
                   <div className="flex items-center gap-3 mb-1">
                     <h4 className="font-bold text-xl text-slate-100 italic">{booking.userName}</h4>
-                    <span className="text-[10px] font-black text-amber-500 px-3 py-1 bg-amber-500/10 rounded-full border border-amber-500/20 uppercase tracking-widest">{booking.type}</span>
+                    <span className="text-[10px] flex items-center gap-1.5 font-black text-amber-500 px-3 py-1 bg-amber-500/10 rounded-full border border-amber-500/20 uppercase tracking-widest">
+                       {getServiceIcon(booking.type, 12)}
+                       {getServiceDisplayName(booking.type)}
+                    </span>
                   </div>
                   <p className="text-[10px] font-bold text-zinc-500 mb-1 uppercase tracking-widest">
                     {booking.userEmail} {booking.userPhone && `• ${booking.userPhone}`}
@@ -466,6 +1176,12 @@ const AdminDashboard = () => {
                   <p className="text-slate-300 font-black uppercase tracking-tight text-sm mb-2">{booking.resourceName}</p>
                   
                   <div className="flex flex-wrap gap-2 mb-3">
+                    {booking.priority && (
+                      <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border ${getPriorityColor(booking.priority)}`}>
+                        <AlertTriangle size={10} />
+                        <span className="text-[8px] font-black uppercase tracking-widest">{booking.priority}</span>
+                      </div>
+                    )}
                     {booking.bay && (
                       <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full">
                         <PlayCircle size={10} className="text-blue-400" />
@@ -518,13 +1234,24 @@ const AdminDashboard = () => {
                     </button>
                   )}
                   {booking.status === 'ongoing' && (
-                    <button 
-                      onClick={() => setUpdateTrackingId(booking.id!)}
-                      className="p-3 bg-amber-500/10 text-amber-500 rounded-xl hover:bg-accent hover:text-zinc-900 transition-all border border-amber-500/20"
-                      title="Update Tracking"
-                    >
-                      <MapPin size={20} />
-                    </button>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setUpdateTrackingId(booking.id!)}
+                        className="p-3 bg-amber-500/10 text-amber-500 rounded-xl hover:bg-accent hover:text-zinc-900 transition-all border border-amber-500/20"
+                        title="Update Tracking"
+                      >
+                        <MapPin size={20} />
+                      </button>
+                      {booking.type === 'carWash' && (
+                        <button 
+                          onClick={() => setAssignBayBookingId(booking.id!)}
+                          className="p-3 bg-blue-500/10 text-blue-500 rounded-xl hover:bg-blue-500 hover:text-white transition-all border border-blue-500/20"
+                          title="Assign/Change Bay"
+                        >
+                          <Car size={20} />
+                        </button>
+                      )}
+                    </div>
                   )}
                   {(booking.status === 'pending' || booking.status === 'ongoing') && (
                     <button 
@@ -582,7 +1309,7 @@ const AdminDashboard = () => {
             </div>
 
             {/* Payment & Customer Info Expansion */}
-            <div className="mt-8 pt-8 border-t border-zinc-800 grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="mt-8 pt-8 border-t border-zinc-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {/* Customer Info Card */}
               <div className="space-y-4">
                 <h5 className="text-[10px] font-black text-zinc-600 uppercase tracking-widest flex items-center gap-2">
@@ -619,6 +1346,39 @@ const AdminDashboard = () => {
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* Priority Control Card */}
+              <div className="space-y-4">
+                <h5 className="text-[10px] font-black text-zinc-600 uppercase tracking-widest flex items-center gap-2">
+                  <AlertTriangle size={12} />
+                  Urgency Level
+                </h5>
+                <div className="bg-zinc-950/50 rounded-2xl p-4 border border-zinc-800/50">
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-tight">Set Priority</p>
+                    <div className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-widest border ${getPriorityColor(booking.priority)}`}>
+                      {booking.priority || 'Normal'}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['low', 'medium', 'high'] as const).map((p) => (
+                      <button 
+                        key={p}
+                        onClick={() => handlePriorityUpdate(booking.id!, p)}
+                        className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
+                          booking.priority === p 
+                            ? (p === 'high' ? 'bg-red-500 border-red-400 text-white shadow-lg shadow-red-500/20' : p === 'medium' ? 'bg-amber-500 border-amber-400 text-zinc-950 shadow-lg shadow-amber-500/20' : 'bg-emerald-500 border-emerald-400 text-zinc-950 shadow-lg shadow-emerald-500/20')
+                            : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700'
+                        }`}
+                      >
+                        <AlertTriangle size={14} />
+                        <span className="text-[8px] font-black uppercase tracking-widest">{p}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -674,31 +1434,62 @@ const AdminDashboard = () => {
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="mt-6 p-6 bg-zinc-950 rounded-[2rem] flex flex-col md:flex-row gap-4 items-end border border-zinc-800 shadow-xl"
+                className="mt-6 p-6 bg-zinc-950 rounded-[2rem] flex flex-col gap-6 border border-zinc-800 shadow-xl"
               >
-                <div className="flex-1 w-full">
-                  <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-3 px-1">Live Status Note</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g. Technician is drying the interior..." 
-                    className="input-field"
-                    value={trackingNote}
-                    onChange={(e) => setTrackingNote(e.target.value)}
-                  />
+                <div>
+                  <h5 className="text-[12px] font-black text-slate-100 uppercase tracking-widest italic mb-4">Quick Tracking Presets</h5>
+                  <div className="flex flex-wrap gap-2">
+                    {(booking.type === 'carWash' ? [
+                      'Washing in progress...',
+                      'Drying & Detailing...',
+                      'Polishing exterior...',
+                      'Final Quality Check...',
+                      'Ready for pickup!'
+                    ] : [
+                      'Players Checked-in',
+                      'Session Started',
+                      'Technical Maintenance',
+                      'Warm-up period',
+                      'Last 5 minutes'
+                    ]).map(preset => (
+                      <button 
+                        key={preset}
+                        onClick={() => setTrackingNote(preset)}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                          trackingNote === preset ? 'bg-accent border-accent text-zinc-950' : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-slate-100'
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => setUpdateTrackingId(null)}
-                    className="btn-secondary h-12"
-                  >
-                    Close
-                  </button>
-                  <button 
-                    onClick={() => handleTrackingUpdate(booking.id!)}
-                    className="btn-primary h-12"
-                  >
-                    Publish
-                  </button>
+
+                <div className="flex flex-col md:flex-row gap-4 items-end">
+                  <div className="flex-1 w-full">
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-3 px-1">Custom Live Status Note</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Technician is drying the interior..." 
+                      className="input-field"
+                      value={trackingNote}
+                      onChange={(e) => setTrackingNote(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => setUpdateTrackingId(null)}
+                      className="btn-secondary h-12"
+                    >
+                      Close
+                    </button>
+                    <button 
+                      onClick={() => handleTrackingUpdate(booking.id!)}
+                      className="btn-primary h-12"
+                    >
+                      Publish Update
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -740,6 +1531,848 @@ const AdminDashboard = () => {
           </motion.div>
         ))}
       </div>
+
+      {/* Bulk Action Bar */}
+      <AnimatePresence>
+        {selectedBookings.length > 0 && (
+          <motion.div
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[150] w-[90%] max-w-2xl"
+          >
+            <div className="bg-zinc-950 border border-accent/30 rounded-[2rem] p-4 shadow-2xl flex flex-wrap items-center justify-between gap-4 backdrop-blur-xl">
+              <div className="flex items-center gap-4 px-4">
+                <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center text-zinc-950 font-black">
+                  {selectedBookings.length}
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-100">Items Selected</p>
+              </div>
+
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => handleBulkStatusUpdate('ongoing')}
+                  className="px-4 py-2 bg-blue-500/10 text-blue-500 border border-blue-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-500 hover:text-white transition-all"
+                >
+                  Start All
+                </button>
+                <button 
+                  onClick={() => handleBulkStatusUpdate('completed')}
+                  className="px-4 py-2 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 hover:text-zinc-950 transition-all"
+                >
+                  Complete All
+                </button>
+                <button 
+                  onClick={() => handleBulkStatusUpdate('cancelled')}
+                  className="px-4 py-2 bg-zinc-800 text-zinc-400 border border-zinc-700 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all"
+                >
+                  Cancel All
+                </button>
+                <div className="w-px h-8 bg-zinc-800 mx-2" />
+                <button 
+                  onClick={handleBulkDelete}
+                  className="p-3 bg-red-900/10 text-red-500 border border-red-500/20 rounded-xl hover:bg-red-500 hover:text-white transition-all"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      </>
+      ) : activeView === 'calendar' ? (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 shadow-2xl">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-12">
+            <div>
+              <h3 className="text-2xl font-black text-slate-100 uppercase tracking-tighter italic mb-2">Schedule Navigator</h3>
+              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Multi-service event monitoring</p>
+            </div>
+            
+            <div className="flex flex-wrap gap-4 items-center">
+              {/* Legend */}
+              <div className="flex flex-wrap gap-4 mr-8 p-3 bg-zinc-950/50 rounded-2xl border border-zinc-800/50">
+                {['game', 'carWash', 'badminton', 'theatre', 'cafe'].map(type => (
+                  <div key={type} className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${getServiceColor(type)}`} />
+                    <span className="text-[8px] font-black uppercase tracking-widest text-zinc-500">{getServiceDisplayName(type)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-4 bg-zinc-950 p-2 rounded-2xl border border-zinc-800">
+                <button 
+                  onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1))}
+                  className="p-2 text-zinc-500 hover:text-accent transition-colors"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                <p className="text-sm font-black uppercase tracking-[0.2em] text-slate-100 min-w-[150px] text-center italic">
+                  {viewDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                </p>
+                <button 
+                  onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1))}
+                  className="p-2 text-zinc-500 hover:text-accent transition-colors"
+                >
+                  <ChevronRight size={20} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 gap-4">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+              <div key={day} className="text-center text-[10px] font-black text-zinc-600 uppercase tracking-widest pb-4">
+                {day}
+              </div>
+            ))}
+            {(() => {
+              const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
+              const firstDayOfMonth = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).getDay();
+              const days = [];
+              
+              const today = new Date();
+              const localTodayStr = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+
+              for (let i = 0; i < firstDayOfMonth; i++) {
+                days.push(<div key={`empty-${i}`} className="h-32 bg-zinc-950/20 rounded-2xl" />);
+              }
+
+              for (let d = 1; d <= daysInMonth; d++) {
+                const dayDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), d);
+                const dateStr = new Date(dayDate.getTime() - dayDate.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+                const dayBookings = bookings.filter(b => b.date === dateStr);
+                const isToday = dateStr === localTodayStr;
+
+                // Group by type for summary
+                const typeCounts = dayBookings.reduce((acc, curr) => {
+                  acc[curr.type] = (acc[curr.type] || 0) + 1;
+                  return acc;
+                }, {} as Record<string, number>);
+
+                days.push(
+                  <button
+                    key={d}
+                    onClick={() => {
+                      setDateFilter('custom');
+                      setCustomRange({ start: dateStr, end: dateStr });
+                      setActiveView('bookings');
+                    }}
+                    className={`h-32 p-4 rounded-2xl border transition-all flex flex-col items-start gap-2 group relative overflow-hidden ${
+                      isToday ? 'bg-accent/5 border-accent' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'
+                    }`}
+                  >
+                    <span className={`text-sm font-black z-10 ${isToday ? 'text-accent' : 'text-zinc-500 group-hover:text-slate-100'}`}>
+                      {d}
+                    </span>
+                    
+                    <div className="flex flex-col gap-1 w-full z-10 overflow-hidden">
+                      {Object.entries(typeCounts).map(([type, count]) => (
+                        <div 
+                          key={type}
+                          className={`flex items-center justify-between px-2 py-0.5 rounded-md ${getServiceColor(type)}/10 border border-${getServiceTextColor(type).split('-')[1]}-500/20`}
+                        >
+                          <div className={`w-1 h-1 rounded-full ${getServiceColor(type)}`} />
+                          <span className={`text-[8px] font-black ${getServiceTextColor(type)} uppercase`}>{count}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {dayBookings.length === 0 && (
+                      <div className="mt-auto opacity-0 group-hover:opacity-100 transition-opacity">
+                         <span className="text-[7px] font-black text-zinc-700 uppercase tracking-widest">No Events</span>
+                      </div>
+                    )}
+                    
+                    {dayBookings.length > 0 && (
+                      <div className="mt-auto w-full flex justify-between items-center text-[8px] font-black uppercase tracking-tighter">
+                         <span className="text-zinc-400 italic">{dayBookings.length} Total</span>
+                         <Plus size={10} className="text-accent" />
+                      </div>
+                    )}
+                  </button>
+                );
+              }
+              return days;
+            })()}
+          </div>
+        </div>
+      ) : activeView === 'payments' ? (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 shadow-2xl">
+          <h3 className="text-2xl font-black text-slate-100 uppercase tracking-tighter italic mb-6">Payment History</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-zinc-800">
+                  <th className="py-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">Date</th>
+                  <th className="py-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">Booking ID</th>
+                  <th className="py-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">Service</th>
+                  <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">Amount</th>
+                  <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">Method</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bookings.filter(b => b.paymentStatus === 'paid').map((b) => (
+                  <tr key={b.id} className="border-b border-zinc-800/50 group hover:bg-zinc-800/20 transition-colors">
+                    <td className="py-4 text-sm font-bold text-slate-300">{b.date}</td>
+                    <td className="py-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">{b.id}</td>
+                    <td className="py-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-500">{getServiceIcon(b.type, 14)}</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">{getServiceDisplayName(b.type)}</span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-4 text-sm font-black italic text-emerald-500">₹{b.price}</td>
+                    <td className="py-4 px-4">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-zinc-950 border border-zinc-800 rounded-full text-[8px] font-black uppercase tracking-widest text-slate-300">
+                        {b.paymentMethod || 'Unknown'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {bookings.filter(b => b.paymentStatus === 'paid').length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center">
+                      <p className="text-sm font-bold text-zinc-600 uppercase tracking-widest">No payment records found.</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : activeView === 'workers' ? (
+        <div className="flex flex-col gap-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            <div>
+              <h3 className="text-2xl font-black text-slate-100 uppercase tracking-tighter italic mb-2">Staff Operations</h3>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setWorkerSubView('attendance')}
+                  className={`text-[10px] font-black uppercase tracking-widest transition-all pb-1 ${workerSubView === 'attendance' ? 'text-accent border-b-2 border-accent' : 'text-zinc-600 hover:text-zinc-400'}`}
+                >
+                  Attendance logs
+                </button>
+                <button 
+                  onClick={() => setWorkerSubView('schedule')}
+                  className={`text-[10px] font-black uppercase tracking-widest transition-all pb-1 ${workerSubView === 'schedule' ? 'text-accent border-b-2 border-accent' : 'text-zinc-600 hover:text-zinc-400'}`}
+                >
+                  Worker scheduling
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-4 w-full md:w-auto">
+              <input 
+                type="date" 
+                value={attendanceDate}
+                onChange={(e) => setAttendanceDate(e.target.value)}
+                className="input-field max-w-[200px]"
+              />
+              <a 
+                href="/attendance"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 px-6 py-3 bg-zinc-950 border border-zinc-800 text-zinc-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:border-accent hover:text-accent transition-all"
+              >
+                <Fingerprint size={16} />
+                Open Terminal
+              </a>
+              {workerSubView === 'attendance' ? (
+                <button 
+                  onClick={() => setShowAddWorker(!showAddWorker)}
+                  className="flex items-center gap-3 px-6 py-3 bg-accent text-zinc-950 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-accent/90 transition-all"
+                >
+                  <Plus size={16} />
+                  Add Employee
+                </button>
+              ) : (
+                <button 
+                  onClick={() => {
+                    setShowAddSchedule(!showAddSchedule);
+                    setNewSchedule(prev => ({ ...prev, date: attendanceDate }));
+                  }}
+                  className="flex items-center gap-3 px-6 py-3 bg-blue-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-all"
+                >
+                  <CalendarIcon size={16} />
+                  Assign Shift
+                </button>
+              )}
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {showAddWorker && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="bg-zinc-900 border border-zinc-800 rounded-[2rem] p-8"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                  <div>
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Employee Name</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. John Doe"
+                      className="input-field"
+                      value={newWorker.name}
+                      onChange={(e) => setNewWorker({...newWorker, name: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Role</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Car Wash Detailer"
+                      className="input-field"
+                      value={newWorker.role}
+                      onChange={(e) => setNewWorker({...newWorker, role: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Contact</label>
+                    <input 
+                      type="text" 
+                      placeholder="Mobile number"
+                      className="input-field"
+                      value={newWorker.contact}
+                      onChange={(e) => setNewWorker({...newWorker, contact: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Joining Date</label>
+                    <input 
+                      type="date"
+                      className="input-field"
+                      value={newWorker.joiningDate}
+                      onChange={(e) => setNewWorker({...newWorker, joiningDate: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Worker Personal ID (Optional)</label>
+                    <input 
+                      type="text"
+                      placeholder="e.g. HUB001"
+                      className="input-field"
+                      value={newWorker.workerCode}
+                      onChange={(e) => setNewWorker({...newWorker, workerCode: e.target.value.toUpperCase()})}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-4">
+                  <button 
+                    onClick={() => setShowAddWorker(false)}
+                    className="px-6 py-3 text-[10px] font-black text-zinc-500 uppercase tracking-widest hover:text-slate-100"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleAddWorker}
+                    disabled={isSubmittingWorker || !newWorker.name || !newWorker.role}
+                    className="px-8 py-3 bg-zinc-950 border border-accent text-accent rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-accent hover:text-zinc-950 transition-all disabled:opacity-50"
+                  >
+                    {isSubmittingWorker ? 'Creating...' : 'Register Employee'}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          
+          <AnimatePresence>
+            {showAddSchedule && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="bg-zinc-900 border border-zinc-800 rounded-[2rem] p-8 mb-8"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                  <div>
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 px-1">Select Employee</label>
+                    <div className="relative">
+                       <Users className="absolute left-4 top-3.5 text-zinc-600" size={18} />
+                       <select 
+                        className="input-field pl-12 appearance-none"
+                        value={newSchedule.workerId}
+                        onChange={(e) => {
+                          const w = workers.find(x => x.id === e.target.value);
+                          if (w) {
+                            setNewSchedule({
+                              ...newSchedule,
+                              workerId: w.id!,
+                              workerName: w.name,
+                              workerRole: w.role
+                            });
+                          }
+                        }}
+                       >
+                         <option value="">Choose coworker...</option>
+                         {workers.map(w => (
+                           <option key={w.id} value={w.id}>{w.name} ({w.role})</option>
+                         ))}
+                       </select>
+                       <ChevronDown className="absolute right-4 top-3.5 text-zinc-500 pointer-events-none" size={18} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 px-1">Shift Time</label>
+                    <div className="grid grid-cols-2 gap-2">
+                       {(['morning', 'evening', 'night', 'full-day'] as const).map(s => (
+                         <button 
+                          key={s}
+                          onClick={() => setNewSchedule({...newSchedule, shift: s})}
+                          className={`py-3 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${
+                            newSchedule.shift === s ? 'bg-blue-500 border-blue-400 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-700'
+                          }`}
+                         >
+                           {s}
+                         </button>
+                       ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 px-1">Service Assignment</label>
+                    <div className="relative">
+                       <Briefcase className="absolute left-4 top-3.5 text-zinc-600" size={18} />
+                       <select 
+                        className="input-field pl-12 appearance-none"
+                        value={newSchedule.serviceType || ''}
+                        onChange={(e) => setNewSchedule({...newSchedule, serviceType: e.target.value as any || undefined})}
+                       >
+                         <option value="">General Assignment</option>
+                         {['game', 'carWash', 'badminton', 'theatre', 'cafe'].map(t => (
+                           <option key={t} value={t}>{getServiceDisplayName(t)}</option>
+                         ))}
+                       </select>
+                       <ChevronDown className="absolute right-4 top-3.5 text-zinc-500 pointer-events-none" size={18} />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-4">
+                  <button 
+                    onClick={() => setShowAddSchedule(false)}
+                    className="px-6 py-3 text-[10px] font-black text-zinc-500 uppercase tracking-widest hover:text-slate-100"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleAddSchedule}
+                    disabled={isSubmittingSchedule || !newSchedule.workerId}
+                    className="px-8 py-3 bg-blue-500 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all disabled:opacity-50"
+                  >
+                    {isSubmittingSchedule ? 'Saving...' : 'Confirm Schedule'}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-4">
+              {workerSubView === 'attendance' ? (
+                <>
+                  <h4 className="text-sm font-black text-slate-100 uppercase tracking-widest px-4">Active Staff List</h4>
+                  {workers.length === 0 && (
+                    <div className="p-12 bg-zinc-900 border border-zinc-800 rounded-[2.5rem] text-center">
+                      <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest">No employees registered yet.</p>
+                    </div>
+                  )}
+                  {workers.map((worker) => {
+                    const record = attendance.find(a => a.workerId === worker.id);
+                    return (
+                      <div key={worker.id} className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-6 hover:border-accent/30 transition-all group">
+                        <div className="flex flex-wrap items-center justify-between gap-6">
+                          <div className="flex items-center gap-6">
+                            <div className="w-14 h-14 bg-zinc-950 rounded-2xl flex items-center justify-center text-zinc-700 group-hover:text-accent group-hover:bg-accent/10 transition-colors">
+                              <User size={24} />
+                            </div>
+                            <div>
+                              <h5 className="font-bold text-lg text-slate-100 italic">{worker.name}</h5>
+                              <div className="flex items-center gap-3 mt-1">
+                                <span className="flex items-center gap-1 text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                                  <Briefcase size={10} className="text-amber-500" />
+                                  {worker.role}
+                                </span>
+                                <span className="text-zinc-700">•</span>
+                                <span className="flex items-center gap-1 text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                                  <Phone size={10} />
+                                  {worker.contact}
+                                </span>
+                                <span className="text-zinc-700">•</span>
+                                <span className="flex items-center gap-1 text-[10px] font-black text-accent uppercase tracking-[0.2em]">
+                                  <Fingerprint size={10} />
+                                  ID: {worker.workerCode}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => handleMarkAttendance(worker.id!, worker.name, 'present')}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                record?.status === 'present' 
+                                  ? 'bg-emerald-500 text-zinc-950' 
+                                  : 'bg-zinc-950 text-zinc-500 border border-zinc-800 hover:border-emerald-500 hover:text-emerald-500'
+                              }`}
+                            >
+                              Present
+                            </button>
+                            <button 
+                              onClick={() => handleMarkAttendance(worker.id!, worker.name, 'half-day')}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                record?.status === 'half-day' 
+                                  ? 'bg-amber-500 text-zinc-950' 
+                                  : 'bg-zinc-950 text-zinc-500 border border-zinc-800 hover:border-amber-500 hover:text-amber-500'
+                              }`}
+                            >
+                              Half Day
+                            </button>
+                            <button 
+                              onClick={() => handleMarkAttendance(worker.id!, worker.name, 'absent')}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                record?.status === 'absent' 
+                                  ? 'bg-red-500 text-zinc-950' 
+                                  : 'bg-zinc-950 text-zinc-500 border border-zinc-800 hover:border-red-500 hover:text-red-500'
+                              }`}
+                            >
+                              Absent
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteWorker(worker.id!)}
+                              className="p-2.5 bg-zinc-950 text-zinc-700 border border-zinc-800 rounded-xl hover:text-red-500 hover:border-red-500 transition-all ml-2"
+                              title="Delete Employee"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between px-4">
+                    <h4 className="text-sm font-black text-slate-100 uppercase tracking-widest">Scheduled Roster for {attendanceDate}</h4>
+                    <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
+                      {schedules.length} Assigned
+                    </span>
+                  </div>
+                  {schedules.length === 0 && (
+                    <div className="p-12 bg-zinc-900 border border-zinc-800 rounded-[2.5rem] text-center">
+                      <div className="w-16 h-16 bg-zinc-950 rounded-2xl flex items-center justify-center text-zinc-800 mx-auto mb-4 border border-zinc-800/50">
+                        <CalendarIcon size={32} />
+                      </div>
+                      <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1">No shifts planned for this date.</p>
+                      <p className="text-[10px] font-black text-zinc-700 uppercase tracking-widest italic">Use 'Assign Shift' to plan the roster.</p>
+                    </div>
+                  )}
+                  {schedules.map((schedule) => (
+                    <motion.div 
+                      key={schedule.id}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-6 hover:border-blue-500/30 transition-all group"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-6">
+                        <div className="flex items-center gap-6">
+                          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors ${
+                            schedule.shift === 'morning' ? 'bg-amber-500/10 text-amber-500' :
+                            schedule.shift === 'evening' ? 'bg-blue-500/10 text-blue-400' :
+                            schedule.shift === 'night' ? 'bg-purple-500/10 text-purple-400' : 'bg-emerald-500/10 text-emerald-400'
+                          }`}>
+                            <Clock size={24} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-3">
+                              <h5 className="font-bold text-lg text-slate-100 italic">{schedule.workerName}</h5>
+                              <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border ${
+                                schedule.shift === 'morning' ? 'border-amber-500/30 text-amber-500' :
+                                schedule.shift === 'evening' ? 'border-blue-500/30 text-blue-400' :
+                                schedule.shift === 'night' ? 'border-purple-500/30 text-purple-400' : 'border-emerald-500/30 text-emerald-400'
+                              }`}>
+                                {schedule.shift}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 mt-1">
+                              <span className="flex items-center gap-1 text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                                <Briefcase size={10} />
+                                {schedule.workerRole}
+                              </span>
+                              {schedule.serviceType && (
+                                <>
+                                  <span className="text-zinc-700">•</span>
+                                  <span className="flex items-center gap-1 text-[10px] font-black text-accent uppercase tracking-widest">
+                                    {getServiceIcon(schedule.serviceType, 10)}
+                                    {getServiceDisplayName(schedule.serviceType)}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                          <button 
+                            onClick={() => handleDeleteSchedule(schedule.id!)}
+                            className="p-3 bg-zinc-950 text-zinc-700 border border-zinc-800 rounded-xl hover:text-red-500 hover:border-red-500 transition-all"
+                            title="Remove Schedule"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </>
+              )}
+            </div>
+
+            <div className="space-y-6">
+              <div className="bg-zinc-950 border border-zinc-800 rounded-[2rem] p-6">
+                <h4 className="text-xs font-black text-slate-100 uppercase tracking-widest mb-6 flex items-center gap-2">
+                  {workerSubView === 'attendance' ? (
+                    <>
+                      <UserCheck size={16} className="text-emerald-500" />
+                      Attendance Summary
+                    </>
+                  ) : (
+                    <>
+                      <CalendarIcon size={16} className="text-blue-500" />
+                      Roster Overview
+                    </>
+                  )}
+                </h4>
+                <div className="space-y-4">
+                  {workerSubView === 'attendance' ? (
+                    <>
+                      <div className="flex justify-between items-center p-4 bg-zinc-900 rounded-xl">
+                        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Present</span>
+                        <span className="text-xl font-black text-emerald-500 italic">{attendance.filter(a => a.status === 'present').length}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-4 bg-zinc-900 rounded-xl">
+                        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Half Day</span>
+                        <span className="text-xl font-black text-amber-500 italic">{attendance.filter(a => a.status === 'half-day').length}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-4 bg-zinc-900 rounded-xl">
+                        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Absent</span>
+                        <span className="text-xl font-black text-red-500 italic">{attendance.filter(a => a.status === 'absent').length}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-center p-4 bg-zinc-900 rounded-xl">
+                        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Morning Shift</span>
+                        <span className="text-xl font-black text-amber-500 italic">{schedules.filter(s => s.shift === 'morning').length}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-4 bg-zinc-900 rounded-xl">
+                        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Evening Shift</span>
+                        <span className="text-xl font-black text-blue-400 italic">{schedules.filter(s => s.shift === 'evening').length}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-4 bg-zinc-900 rounded-xl">
+                        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Night Shift</span>
+                        <span className="text-xl font-black text-purple-400 italic">{schedules.filter(s => s.shift === 'night').length}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-between items-center p-4 bg-zinc-950 border border-zinc-800 rounded-xl">
+                    <span className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">Total Staff</span>
+                    <span className="text-xl font-black text-slate-100 italic">{workers.length}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 bg-accent/5 border border-accent/20 rounded-[2rem]">
+                 <div className="flex items-center gap-3 mb-4">
+                   <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center text-zinc-950">
+                     <Clock size={16} />
+                   </div>
+                   <h5 className="font-black text-xs uppercase tracking-widest text-slate-100">Live Status</h5>
+                 </div>
+                 <p className="text-[10px] font-medium text-zinc-400 leading-relaxed mb-4">
+                   Marking attendance will automatically record the timestamp. Staff listed as "Inactive" will not appear in the daily log.
+                 </p>
+                 <div className="bg-zinc-950/50 p-3 rounded-xl border border-white/5">
+                   <p className="text-[8px] font-black uppercase tracking-[0.2em] text-zinc-600">Selected Date</p>
+                   <p className="text-[10px] font-black text-accent mt-1">{new Date(attendanceDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : activeView === 'cafeMenu' ? (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 shadow-2xl">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+            <div>
+              <h3 className="text-2xl font-black text-slate-100 uppercase tracking-tighter italic mb-2">Cafe Menu Management</h3>
+              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Add and manage menu items for the Hub Cafe</p>
+            </div>
+            <button 
+              onClick={() => {
+                setEditingMenuItem(null);
+                setNewMenuItem({ name: '', category: '', price: 0, imageUrl: '', isAvailable: true });
+                setShowAddMenu(true);
+              }}
+              className="flex items-center gap-3 px-6 py-3 bg-amber-500 text-zinc-950 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-amber-400 transition-all"
+            >
+              <Plus size={16} />
+              Add Menu Item
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {showAddMenu && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="bg-zinc-950 border border-zinc-800 rounded-[2rem] p-8 mb-8 overflow-hidden"
+              >
+                <h4 className="text-sm font-black text-slate-100 uppercase tracking-widest mb-6">{editingMenuItem ? 'Edit Menu Item' : 'New Menu Item'}</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                  <div>
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 px-1">Item Name</label>
+                    <input 
+                      type="text" 
+                      placeholder="Espresso, Sandwich..."
+                      value={newMenuItem.name}
+                      onChange={(e) => setNewMenuItem({...newMenuItem, name: e.target.value})}
+                      className="input-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 px-1">Category</label>
+                    <select 
+                      className="input-field appearance-none"
+                      value={newMenuItem.category}
+                      onChange={(e) => setNewMenuItem({...newMenuItem, category: e.target.value})}
+                    >
+                      <option value="">Select Category</option>
+                      <option value="Coffee">Coffee</option>
+                      <option value="Tea">Tea</option>
+                      <option value="Snacks">Snacks</option>
+                      <option value="Cold Drinks">Cold Drinks</option>
+                      <option value="Desserts">Desserts</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 px-1">Price (₹)</label>
+                    <input 
+                      type="number" 
+                      placeholder="0.00"
+                      value={newMenuItem.price || ''}
+                      onChange={(e) => setNewMenuItem({...newMenuItem, price: Number(e.target.value)})}
+                      className="input-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 px-1">Image URL</label>
+                    <input 
+                      type="text" 
+                      placeholder="https://..."
+                      value={newMenuItem.imageUrl}
+                      onChange={(e) => setNewMenuItem({...newMenuItem, imageUrl: e.target.value})}
+                      className="input-field"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-4">
+                  <button 
+                    onClick={() => {
+                      setShowAddMenu(false);
+                      setEditingMenuItem(null);
+                    }}
+                    className="px-6 py-3 text-[10px] font-black text-zinc-500 uppercase tracking-widest hover:text-slate-100"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleAddMenuItem}
+                    disabled={isSubmittingMenu || !newMenuItem.name || !newMenuItem.category}
+                    className="px-8 py-3 bg-amber-500 text-zinc-950 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-amber-400 transition-all disabled:opacity-50"
+                  >
+                    {isSubmittingMenu ? 'Saving...' : editingMenuItem ? 'Update Item' : 'Add to Menu'}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {menuItems.map((item) => (
+              <div key={item.id} className="bg-zinc-950 border border-zinc-800 rounded-[2rem] p-6 hover:border-amber-500/30 transition-all group overflow-hidden">
+                <div className="flex gap-4 mb-6">
+                  <div className="w-20 h-20 bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 flex-shrink-0">
+                    {item.imageUrl ? (
+                      <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-zinc-700">
+                        <Coffee size={32} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest">{item.category}</span>
+                      <div className={`w-2 h-2 rounded-full ${item.isAvailable ? 'bg-emerald-500' : 'bg-red-500'} shadow-[0_0_8px_rgba(16,185,129,0.5)]`} />
+                    </div>
+                    <h5 className="font-bold text-lg text-slate-100 italic truncate mb-1">{item.name}</h5>
+                    <p className="text-xl font-black text-emerald-500 italic">₹{item.price}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-4 pt-4 border-t border-zinc-900">
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => {
+                        setEditingMenuItem(item);
+                        setNewMenuItem({
+                          name: item.name,
+                          category: item.category,
+                          price: item.price,
+                          imageUrl: item.imageUrl || '',
+                          isAvailable: item.isAvailable
+                        });
+                        setShowAddMenu(true);
+                      }}
+                      className="p-2.5 bg-zinc-900 text-zinc-500 border border-zinc-800 rounded-xl hover:text-amber-500 hover:border-amber-500 transition-all"
+                      title="Edit Item"
+                    >
+                      <Briefcase size={16} />
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteMenuItem(item.id!)}
+                      className="p-2.5 bg-zinc-900 text-zinc-500 border border-zinc-800 rounded-xl hover:text-red-500 hover:border-red-500 transition-all"
+                      title="Delete Item"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+
+                  <button 
+                    onClick={() => handleToggleMenuAvailability(item.id!, item.isAvailable)}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${
+                      item.isAvailable 
+                        ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' 
+                        : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                    }`}
+                  >
+                    {item.isAvailable ? 'Available' : 'Sold Out'}
+                  </button>
+                </div>
+              </div>
+            ))}
+            {menuItems.length === 0 && (
+              <div className="col-span-full py-20 text-center bg-zinc-950/50 border border-zinc-800 border-dashed rounded-[3rem]">
+                <Coffee size={48} className="mx-auto text-zinc-800 mb-4 opacity-20" />
+                <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Your cafe menu is empty.</p>
+                <p className="text-[10px] font-medium text-zinc-700 uppercase tracking-widest mt-1">Start adding delicious treats!</p>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

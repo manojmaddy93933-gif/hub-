@@ -85,7 +85,7 @@ export const bookingService = {
     }
   },
 
-  subscribeToUserBookings(userId: string, callback: (bookings: Booking[]) => void) {
+  subscribeToUserBookings(userId: string, callback: (bookings: Booking[], changes?: any[]) => void) {
     const path = 'bookings';
     const q = query(
       collection(db, path), 
@@ -95,7 +95,7 @@ export const bookingService = {
     
     return onSnapshot(q, (snapshot) => {
       const bookings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking));
-      callback(bookings);
+      callback(bookings, snapshot.docChanges());
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, path);
     });

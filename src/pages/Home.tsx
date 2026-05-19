@@ -1,15 +1,25 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Car, Gamepad2, Trophy, Clock, Users, ArrowRight, Coffee } from 'lucide-react';
+import { Car, Gamepad2, Trophy, Clock, Users, ArrowRight, Coffee, Monitor, Star, Play, Quote, CheckCircle2, Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import carWashImg from '../assets/images/car_wash_bay_vibe_1778742611946.png';
 import gamesImg from '../assets/images/games_vibe_1778742630317.png';
 import badmintonImg from '../assets/images/badminton_vibe_1778742647583.png';
-import { Monitor } from 'lucide-react';
 
 import { MapSection } from '../components/MapSection';
 
 const Home = () => {
+  const [searchQuery, setSearchQuery] = React.useState('');
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    // Search Google for the query, restricting to site if intended or just general
+    // Given the prompt "add google search https: hub station app.com", we'll search hub station app specifically
+    const url = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}+hubstationapp.com`;
+    window.open(url, '_blank');
+  };
+
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
@@ -106,6 +116,51 @@ const Home = () => {
     }
   ];
 
+  const videos = [
+    {
+      title: 'Car Detailing Process',
+      thumbnail: 'https://images.unsplash.com/photo-1601362840469-51e4d8d59085?q=80&w=2070&auto=format&fit=crop',
+      duration: '0:45',
+      category: 'Pro Service'
+    },
+    {
+      title: 'AURA Cafe Experience',
+      thumbnail: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?q=80&w=2070&auto=format&fit=crop',
+      duration: '1:20',
+      category: 'Lifestyle'
+    },
+    {
+      title: 'Gaming Zone Tour',
+      thumbnail: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=2071&auto=format&fit=crop',
+      duration: '0:30',
+      category: 'Virtual Tour'
+    }
+  ];
+
+  const reviews = [
+    {
+      name: 'Adithya Varma',
+      role: 'Regular Customer',
+      content: 'The car wash quality is unmatched. I love hanging out at the AURA cafe while my SUV gets treated. The real-time tracking is a game changer!',
+      rating: 5,
+      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=1974&auto=format&fit=crop'
+    },
+    {
+      name: 'Priya Sharma',
+      role: 'Student',
+      content: 'Best place for birthday celebrations! The Private Theatre is cozy and premium. Highly recommend for any celebration.',
+      rating: 5,
+      avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=1974&auto=format&fit=crop'
+    },
+    {
+      name: 'Rahul Hegde',
+      role: 'Software Engineer',
+      content: 'I frequently visit the badminton court. The facility is well-maintained and the booking process is seamless. Highly recommend!',
+      rating: 4,
+      avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=1974&auto=format&fit=crop'
+    }
+  ];
+
   const stats = [
     { icon: <Clock size={20} />, label: 'Fast Service', value: '15-30 min' },
     { icon: <Users size={20} />, label: 'Capacity', value: '50+ People' },
@@ -142,19 +197,15 @@ const Home = () => {
                 <span className="w-2 h-2 bg-accent rounded-full animate-pulse" />
                 Now Open
               </div>
-              <div className="inline-flex items-center gap-2 bg-blue-500/20 backdrop-blur-md px-4 py-2 rounded-full border border-blue-500/30 font-bold text-blue-400 text-xs tracking-widest uppercase shadow-lg shadow-blue-500/10">
-                <Trophy size={14} className="animate-bounce" />
-                10% Student Offer
-              </div>
             </motion.div>
             
-            <motion.h2 
+            <motion.h1 
               variants={heroTitleVariants}
               className="text-6xl md:text-8xl font-bold leading-tight mb-6 tracking-tighter uppercase perspective-1000"
             >
               Premium <br />
               <span className="text-accent italic font-black">HUB EXPERIENCE</span>
-            </motion.h2>
+            </motion.h1>
             <motion.p 
               variants={{
                 hidden: { opacity: 0, y: 20 },
@@ -165,6 +216,33 @@ const Home = () => {
               A meticulously crafted space where coffee culture meets high-end service. 
               Gourmet menu, social gaming, and professional car detailing.
             </motion.p>
+
+            <motion.form 
+              onSubmit={handleSearch}
+              variants={{
+                hidden: { opacity: 0, y: 20 },
+                visible: { opacity: 1, y: 0 }
+              }}
+              className="relative max-w-md mb-10 group"
+            >
+              <div className="absolute inset-y-0 left-5 flex items-center pointer-events-none text-zinc-500 group-focus-within:text-accent transition-colors">
+                <Search size={20} />
+              </div>
+              <input 
+                type="text"
+                placeholder="Search hubstationapp.com..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl py-4 pl-14 pr-6 text-slate-100 placeholder:text-zinc-600 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-all font-medium"
+              />
+              <button 
+                type="submit"
+                className="absolute right-2 top-2 bottom-2 px-6 bg-accent text-zinc-950 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-white transition-all"
+              >
+                Search
+              </button>
+            </motion.form>
+
             <motion.div 
               variants={{
                 hidden: { opacity: 0, scale: 0.9 },
@@ -239,6 +317,53 @@ const Home = () => {
         </div>
       </motion.section>
 
+      {/* Pro Videos Section */}
+      <section className="max-w-7xl mx-auto px-4 mt-32">
+        <div className="mb-12">
+          <h2 className="text-3xl md:text-5xl font-bold text-slate-100 italic uppercase tracking-tighter mb-4">
+            Pro <span className="text-accent">Working Videos</span>
+          </h2>
+          <p className="text-sm font-black text-zinc-500 uppercase tracking-widest">See how we deliver excellence at the hub</p>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {videos.map((vid, idx) => (
+            <motion.div 
+              key={idx}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: idx * 0.1 }}
+              className="group relative rounded-[2rem] overflow-hidden bg-zinc-900 border border-zinc-800"
+            >
+              <div className="aspect-video relative overflow-hidden">
+                <img 
+                  src={vid.thumbnail} 
+                  alt={vid.title} 
+                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 grayscale-[0.3]" 
+                />
+                <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-all flex items-center justify-center">
+                  <div className="w-14 h-14 bg-accent/90 rounded-full flex items-center justify-center text-zinc-950 shadow-xl shadow-accent/20 group-hover:scale-110 transition-transform">
+                    <Play size={24} fill="currentColor" />
+                  </div>
+                </div>
+                <div className="absolute top-4 left-4">
+                  <span className="bg-zinc-950/80 backdrop-blur-md border border-white/10 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-[0.2em] text-accent">
+                    {vid.category}
+                  </span>
+                </div>
+                <div className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md px-2 py-0.5 rounded text-[8px] font-black text-white">
+                  {vid.duration}
+                </div>
+              </div>
+              <div className="p-6">
+                <h4 className="text-sm font-bold text-slate-100 uppercase tracking-tight">{vid.title}</h4>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
       {/* Info Section */}
       <section className="max-w-7xl mx-auto px-4 mt-32">
         <motion.div 
@@ -308,6 +433,58 @@ const Home = () => {
           </div>
         </motion.div>
       </section>
+
+      {/* Reviews Section */}
+      <section className="bg-zinc-950 mt-32 py-32 border-y border-zinc-800">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="text-center mb-20">
+            <h2 className="text-4xl md:text-6xl font-black text-slate-100 uppercase tracking-tighter italic mb-4">
+              Real <span className="text-accent">Hub Stories</span>
+            </h2>
+            <div className="flex items-center justify-center gap-2 text-amber-500 mb-4">
+              {[...Array(5)].map((_, i) => <Star key={i} size={20} fill="currentColor" />)}
+            </div>
+            <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest">Trusted by 2000+ Premium Members</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {reviews.map((review, i) => (
+              <motion.div 
+                key={i}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="bg-zinc-900/50 backdrop-blur-sm border border-zinc-800 p-10 rounded-[3rem] relative group hover:border-accent/30 transition-all"
+              >
+                <Quote className="absolute top-10 right-10 text-zinc-800 group-hover:text-accent/20 transition-colors" size={48} />
+                <div className="relative z-10">
+                  <div className="flex gap-1 mb-8">
+                    {[...Array(review.rating)].map((_, idx) => (
+                      <Star key={idx} size={12} className="text-amber-500" fill="currentColor" />
+                    ))}
+                  </div>
+                  <p className="text-zinc-400 text-lg leading-relaxed font-medium mb-10 italic">
+                    "{review.content}"
+                  </p>
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl overflow-hidden border-2 border-zinc-800">
+                      <img src={review.avatar} alt={review.name} className="w-full h-full object-cover" />
+                    </div>
+                    <div>
+                      <h4 className="text-slate-100 font-bold uppercase tracking-tight">{review.name}</h4>
+                      <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest flex items-center gap-1.5">
+                        <CheckCircle2 size={10} className="text-emerald-500" /> {review.role}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Location Map Section */}
       <MapSection />
     </div>

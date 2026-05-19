@@ -34,6 +34,7 @@
         "vehiclePhotoUrl": { "type": "string" },
         "notes": { "type": "string" },
         "status": { "type": "string", "enum": ["pending", "ongoing", "completed", "cancelled"] },
+        "priority": { "type": "string", "enum": ["low", "medium", "high"] },
         "price": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" },
         "tracking": {
@@ -57,9 +58,55 @@
         "category": { "type": "string" },
         "price": { "type": "number" },
         "imageUrl": { "type": "string" },
-        "available": { "type": "boolean" }
+        "isAvailable": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["name", "category", "price"]
+      "required": ["name", "category", "price", "isAvailable"]
+    },
+    "Worker": {
+      "title": "Hub Worker",
+      "description": "Employee or worker at the hub.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "contact": { "type": "string" },
+        "joiningDate": { "type": "string", "format": "date" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "role", "isActive"]
+    },
+    "Attendance": {
+      "title": "Worker Attendance",
+      "description": "Daily attendance record for a worker.",
+      "type": "object",
+      "properties": {
+        "workerId": { "type": "string" },
+        "workerName": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "checkIn": { "type": "string", "format": "date-time" },
+        "checkOut": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["present", "absent", "half-day"] },
+        "notes": { "type": "string" }
+      },
+      "required": ["workerId", "workerName", "date", "status"]
+    },
+    "StaffSchedule": {
+      "title": "Staff Schedule",
+      "description": "Shift and service assignment for a worker.",
+      "type": "object",
+      "properties": {
+        "workerId": { "type": "string" },
+        "workerName": { "type": "string" },
+        "workerRole": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "shift": { "type": "string", "enum": ["morning", "evening", "night", "full-day"] },
+        "serviceType": { "type": "string", "enum": ["game", "carWash", "badminton", "theatre", "cafe"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["workerId", "workerName", "date", "shift"]
     }
   },
   "firestore": {
@@ -74,6 +121,18 @@
     "menu/{menuId}": {
       "schema": "MenuItem",
       "description": "Cafe menu catalog."
+    },
+    "workers/{workerId}": {
+      "schema": "Worker",
+      "description": "Records of all hub employees."
+    },
+    "attendance/{attendanceId}": {
+      "schema": "Attendance",
+      "description": "Daily attendance logs."
+    },
+    "schedules/{scheduleId}": {
+      "schema": "StaffSchedule",
+      "description": "Staff shift and assignment plans."
     }
   }
 }

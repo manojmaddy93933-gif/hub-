@@ -35,7 +35,7 @@ const QRHub = () => {
               <span className="text-[10px] font-black text-accent uppercase tracking-[0.4em] italic">Station Access</span>
             </div>
             <h1 className="text-4xl font-black text-slate-100 uppercase tracking-tighter italic mb-8">
-              HUB PERFORMANCE
+              HUB STATION
             </h1>
 
             {/* QR Code Container */}
@@ -72,7 +72,7 @@ const QRHub = () => {
                 <Printer size={16} /> Print Flyer
               </button>
               <button 
-                onClick={() => navigator.share?.({ title: 'Hub Performance', url: appUrl })}
+                onClick={() => navigator.share?.({ title: 'Hub Station', url: appUrl })}
                 className="flex items-center justify-center gap-2 bg-accent text-zinc-950 py-4 px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all"
               >
                 <Share2 size={16} /> Share Link
@@ -83,7 +83,7 @@ const QRHub = () => {
 
         <div className="mt-8 text-center">
           <p className="text-[9px] font-black text-zinc-700 uppercase tracking-[0.3em]">
-            Digital Performance Hub &copy; 2026
+            Digital Hub Station &copy; 2026
           </p>
         </div>
       </div>

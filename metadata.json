@@ -1,2 +1,11 @@
-
+{
+  "name": "HUB STATION",
+  "description": "A premium performance hub featuring the AURA cafe, car wash, and more. Official site: https://hubstationapp.com",
+  "requestFramePermissions": [
+    "geolocation",
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

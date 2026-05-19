@@ -6,11 +6,13 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
+import Footer from './components/Footer';
 import Home from './pages/Home';
 import Bookings from './pages/Bookings';
 import AdminDashboard from './pages/AdminDashboard';
 import Login from './pages/Login';
 import QRHub from './pages/QRHub';
+import StaffAttendance from './pages/StaffAttendance';
 
 function AppContent() {
   const { user, loading, isAdmin } = useAuth();
@@ -39,9 +41,11 @@ function AppContent() {
               path="/admin" 
               element={isAdmin ? <AdminDashboard /> : <Navigate to="/" />} 
             />
+            <Route path="/attendance" element={<StaffAttendance />} />
             <Route path="/qrhub" element={<QRHub />} />
           </Routes>
         </main>
+        <Footer />
       </div>
     </Router>
   );

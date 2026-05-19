@@ -4,10 +4,19 @@ import { createServer as createViteServer } from "vite";
 import { Resend } from 'resend';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import { GoogleGenAI, Modality } from "@google/genai";
 
 dotenv.config();
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY!,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    }
+  }
+});
 
 async function startServer() {
   const app = express();
@@ -42,6 +51,34 @@ async function startServer() {
     } catch (err) {
       console.error("Failed to send email:", err);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/gemini/tts", async (req, res) => {
+    const { text, voice = 'Zephyr' } = req.body;
+    
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(200).json({ audio: null, message: "GEMINI_API_KEY not set" });
+    }
+
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-flash-tts-preview",
+        contents: [{ parts: [{ text }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voice },
+            },
+          },
+        },
+      });
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      res.json({ audio: base64Audio });
+    } catch (error) {
+      console.error("TTS Error:", error);
+      res.status(500).json({ error: "Failed to generate speech" });
     }
   });
 
