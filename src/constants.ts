@@ -17,8 +17,8 @@ export const RATES = {
   },
   CAR_WASH: [
     { type: 'Quick Wash', price: 500 },
-    { type: 'Premium Wash', price: 800 },
-    { type: 'Deep Clean Service', price: 1300 }
+    { type: 'Premium Wash', price: 1200 },
+    { type: 'Deep Clean Service', price: 2200 }
   ],
   BADMINTON: {
     rate1h: 400,

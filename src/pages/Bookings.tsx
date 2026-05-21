@@ -30,7 +30,6 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { RATES, CAR_WASH_HOURS, BADMINTON_HOURS, THEATRE_HOURS, AURA_CAFE_HOURS } from '../constants';
-import { LiveTrackingMap } from '../components/LiveTrackingMap';
 import PaymentQR from '../components/PaymentQR';
 
 const Bookings = () => {
@@ -54,6 +53,20 @@ const Bookings = () => {
   const [vehiclePhotoUrl, setVehiclePhotoUrl] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [showQR, setShowQR] = useState<string | null>(null);
+  const [activePendingBooking, setActivePendingBooking] = useState<Booking | null>(null);
+
+  const resetForm = () => {
+    setResourceId('');
+    setVehicleNumber('');
+    setVehicleMake('');
+    setVehicleModel('');
+    setVehicleYear('');
+    setVehiclePhotoUrl(null);
+    setNotes('');
+    setPolicyAccepted(false);
+    setDate(new Date().toISOString().split('T')[0]);
+    setStartTime('10:00');
+  };
 
   const generateTimeSlots = (open: string, close: string) => {
     const slots = [];
@@ -72,6 +85,10 @@ const Bookings = () => {
     if (user) {
       const unsubscribe = bookingService.subscribeToUserBookings(user.uid, (data, changes) => {
         setMyBookings(data);
+        
+        // Update active pending booking for the current tab
+        const pending = data.find(b => b.type === activeTab && b.status === 'pending');
+        setActivePendingBooking(pending || null);
 
         if (isFirstLoad.current) {
           isFirstLoad.current = false;
@@ -101,6 +118,11 @@ const Bookings = () => {
       return () => unsubscribe();
     }
   }, [user]);
+
+  useEffect(() => {
+    const pending = myBookings.find(b => b.type === activeTab && b.status === 'pending');
+    setActivePendingBooking(pending || null);
+  }, [activeTab, myBookings]);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -188,14 +210,7 @@ const Bookings = () => {
       }
 
       alert('Booking successful!');
-      setPolicyAccepted(false);
-      setResourceId('');
-      setVehicleNumber('');
-      setVehicleMake('');
-      setVehicleModel('');
-      setVehicleYear('');
-      setVehiclePhotoUrl(null);
-      setNotes('');
+      resetForm();
     } catch (error) {
       console.error(error);
       alert('Booking failed. Please try again.');
@@ -240,118 +255,10 @@ const Bookings = () => {
   const getStatusColor = (status: BookingStatus) => {
     switch (status) {
       case 'ongoing': return 'bg-blue-500/10 text-blue-500 border border-blue-500/20';
-      case 'completed': return 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20';
+      case 'completed': return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
       case 'cancelled': return 'bg-red-500/10 text-red-500 border border-red-500/20';
       default: return 'bg-amber-500/10 text-amber-500 border border-amber-500/20';
     }
-  };
-
-  const renderStatusTracking = (booking: Booking) => {
-    if (booking.status === 'cancelled') return null;
-
-    const steps = booking.type === 'carWash' 
-      ? ['Booked', 'Confirmed', 'Washing', 'Polishing', 'Ready']
-      : ['Booked', 'Confirmed', 'Live', 'Completed'];
-
-    const getCurrentStep = () => {
-      if (booking.status === 'pending') return 0;
-      if (booking.status === 'ongoing') {
-        if (booking.type === 'carWash') {
-          return (booking.tracking?.statusUpdate?.toLowerCase().includes('drying') || 
-                  booking.tracking?.statusUpdate?.toLowerCase().includes('polish')) ? 3 : 2;
-        }
-        return 2;
-      }
-      if (booking.status === 'completed') return steps.length - 1;
-      return 0;
-    };
-
-    const currentStepIndex = getCurrentStep();
-
-    return (
-      <motion.div 
-        initial={{ opacity: 0, height: 0 }}
-        animate={{ opacity: 1, height: 'auto' }}
-        className="mt-6 p-6 bg-zinc-950/80 rounded-3xl border border-zinc-800 shadow-inner"
-      >
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-3 w-3">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${booking.status === 'ongoing' ? 'bg-blue-500' : 'bg-amber-500'}`}></span>
-              <span className={`relative inline-flex rounded-full h-3 w-3 ${booking.status === 'ongoing' ? 'bg-blue-500' : 'bg-amber-500'}`}></span>
-            </div>
-            <span className="text-slate-100 font-black text-xs tracking-[0.2em] uppercase italic">Real-Time Tracking</span>
-          </div>
-          <span className="text-[10px] font-black text-zinc-600 uppercase tracking-widest bg-zinc-900 px-3 py-1 rounded-full border border-zinc-800">
-            {new Date(booking.tracking?.lastUpdated || booking.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        </div>
-
-        {/* Improved Progress Stepper */}
-        <div className="relative mb-8 px-2">
-          <div className="absolute top-1/2 left-0 w-full h-[1px] bg-zinc-800 -translate-y-1/2" />
-          <div 
-            className="absolute top-1/2 left-0 h-[2px] bg-accent -translate-y-1/2 transition-all duration-1000"
-            style={{ width: `${(currentStepIndex / (steps.length - 1)) * 100}%` }}
-          />
-          
-          <div className="relative flex justify-between">
-            {steps.map((step, idx) => {
-              const isCompleted = idx < currentStepIndex;
-              const isActive = idx === currentStepIndex;
-              
-              return (
-                <div key={idx} className="flex flex-col items-center">
-                  <div className={`w-3 h-3 rounded-full border-2 transition-all duration-500 z-10 ${
-                    isCompleted ? 'bg-accent border-accent' : 
-                    isActive ? 'bg-zinc-950 border-accent animate-pulse' : 
-                    'bg-zinc-950 border-zinc-800'
-                  }`} />
-                  <span className={`mt-3 text-[8px] font-black uppercase tracking-tighter transition-colors duration-500 whitespace-nowrap ${
-                    isActive ? 'text-accent' : isCompleted ? 'text-slate-400' : 'text-zinc-700'
-                  }`}>
-                    {step}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        
-        <div className="bg-zinc-900/50 rounded-2xl p-4 border border-zinc-800/50 mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Current Status</span>
-            <span className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em]">Live Update</span>
-          </div>
-          <p className="text-sm font-bold text-slate-100 italic">
-            {booking.status === 'pending' ? 'Awaiting slot confirmation from management...' : 
-             booking.status === 'completed' ? 'Your session has been successfully completed in bay.' :
-             booking.tracking?.statusUpdate || 'Service in progress, please wait...'}
-          </p>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-zinc-500 text-[10px] font-black uppercase tracking-widest">
-            <MapPin size={10} className="text-accent" />
-            <span>{booking.bay || 'Station Area'} • {booking.type === 'carWash' ? 'Detox Bay' : 'Hub Zone'}</span>
-          </div>
-          {booking.status === 'ongoing' && (
-            <div className="flex items-center gap-2">
-              <span className="text-[8px] font-black text-zinc-600 uppercase tracking-[0.3em]">Monitoring</span>
-              <div className="h-1 w-8 bg-zinc-800 rounded-full overflow-hidden">
-                <motion.div 
-                  animate={{ x: [-32, 32] }}
-                  transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                  className="h-full w-full bg-accent"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        <LiveTrackingMap status={booking.status} type={booking.type} />
-      </motion.div>
-    );
   };
 
   return (
@@ -527,6 +434,40 @@ const Bookings = () => {
             </div>
 
             <AnimatePresence mode="wait">
+              {activeTab === 'carWash' && activePendingBooking && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="p-5 bg-red-500/10 border border-red-500/20 rounded-3xl mb-8 relative overflow-hidden group"
+                >
+                  <div className="absolute top-0 right-0 p-2 opacity-20">
+                    <AlertCircle size={40} className="text-red-500" />
+                  </div>
+                  <div className="relative z-10">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                      <p className="text-[10px] font-black text-red-500 uppercase tracking-widest">Active Pending Reservation</p>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-black text-white uppercase italic leading-none">{activePendingBooking.resourceName}</p>
+                        <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-1">
+                          {activePendingBooking.date} @ {activePendingBooking.startTime}
+                        </p>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => handleCancelBooking(activePendingBooking.id!)}
+                        className="px-5 py-2.5 bg-red-500 text-white rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-red-600 transition-all shadow-xl shadow-red-500/20 active:scale-95"
+                      >
+                        Cancel Booking
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
               {activeTab === 'carWash' && (
                 <motion.div 
                   key="carWashForm"
@@ -699,17 +640,27 @@ const Bookings = () => {
               </label>
             </div>
 
-            <button 
-              type="submit" 
-              disabled={loading || !policyAccepted}
-              className="w-full btn-primary mt-4 flex items-center justify-center gap-2 disabled:opacity-50 disabled:grayscale"
-            >
-              {loading ? (
-                <span className="w-5 h-5 border-2 border-zinc-950/30 border-t-zinc-950 rounded-full animate-spin" />
-              ) : (
-                <>Confirm Reservation <ChevronRight size={18} /></>
-              )}
-            </button>
+            <div className="flex gap-4 mt-8">
+              <button 
+                type="button" 
+                onClick={resetForm}
+                className="flex-1 h-14 bg-zinc-950 border border-zinc-800 text-zinc-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:border-red-500/40 hover:text-red-500 transition-all flex items-center justify-center gap-2 group"
+              >
+                <X size={14} className="group-hover:rotate-90 transition-transform" />
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                disabled={loading || !policyAccepted}
+                className="flex-[2] h-14 btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:grayscale"
+              >
+                {loading ? (
+                  <span className="w-5 h-5 border-2 border-zinc-950/30 border-t-zinc-950 rounded-full animate-spin" />
+                ) : (
+                  <>Confirm Reservation <ChevronRight size={18} /></>
+                )}
+              </button>
+            </div>
           </form>
         </div>
       </div>
@@ -883,7 +834,6 @@ const Bookings = () => {
                   )}
                 </AnimatePresence>
 
-                {renderStatusTracking(booking)}
 
                  {booking.vehicleNumber && (
                     <div className="mt-4 pt-4 border-t border-zinc-800">

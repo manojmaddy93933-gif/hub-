@@ -26,7 +26,7 @@ export const MapSection: React.FC = () => {
           </div>
           <h2 className="text-3xl font-black mb-4 uppercase tracking-tighter text-slate-100">Location Map Required</h2>
           <p className="text-zinc-500 mb-8 max-w-lg mx-auto font-medium">
-            To view our interactive location map and tracking services, please add your Google Maps API Key to the project secrets.
+            To view our interactive location map, please add your Google Maps API Key to the project secrets.
           </p>
           
           <div className="max-w-md mx-auto bg-zinc-950 p-6 rounded-3xl border border-zinc-800 text-left mb-8">

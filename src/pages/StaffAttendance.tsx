@@ -113,10 +113,10 @@ const StaffAttendance = () => {
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-full text-blue-400 text-[10px] font-black uppercase tracking-widest mb-4">
             <ShieldCheck size={14} />
-            Secure Staff Terminal
+            Secure Staff Login
           </div>
           <h1 className="text-4xl font-black text-slate-100 uppercase tracking-tighter italic">
-            HUB STATION <span className="text-accent underline decoration-2 underline-offset-8">ATTENDANCE</span>
+            HUB STATION <span className="text-accent underline decoration-2 underline-offset-8">TERMINAL</span>
           </h1>
           <div className="mt-4 flex items-center justify-center gap-6 text-zinc-500 font-mono text-sm">
             <div className="flex items-center gap-2">
@@ -146,16 +146,16 @@ const StaffAttendance = () => {
                     <Fingerprint size={48} className="text-zinc-700 group-hover:text-accent transition-colors duration-500" />
                     <div className="absolute -top-1 -right-1 w-4 h-4 bg-accent rounded-full animate-pulse" />
                   </div>
-                  <h2 className="text-xl font-black text-slate-100 uppercase tracking-tight italic">Enter Worker ID</h2>
-                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-2">Personal code for attendance tracking</p>
+                  <h2 className="text-xl font-black text-slate-100 uppercase tracking-tight italic">Enter Unique Worker ID</h2>
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-2">Authentication required for clock-in/out</p>
                 </div>
 
                 <div className="relative">
                   <input 
-                    type="text"
+                    type="password"
                     value={workerCode}
                     onChange={(e) => setWorkerCode(e.target.value.toUpperCase())}
-                    placeholder="HUB - XXXX"
+                    placeholder="WKR - XXXX"
                     autoFocus
                     className="w-full bg-zinc-950 border-2 border-zinc-800 rounded-2xl px-8 py-5 text-center text-2xl font-black tracking-[0.5em] text-slate-100 focus:border-accent outline-none transition-all placeholder:text-zinc-800 placeholder:tracking-normal uppercase"
                   />
@@ -182,7 +182,7 @@ const StaffAttendance = () => {
                     <div className="w-6 h-6 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <>
-                      <span className="text-lg">CONTINUE</span>
+                      <span className="text-lg">SECURE LOGIN</span>
                       <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
                     </>
                   )}

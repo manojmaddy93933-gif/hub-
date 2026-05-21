@@ -104,12 +104,16 @@ const getServiceTextColor = (type: string) => {
 
 const AdminDashboard = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const bookingsRef = React.useRef<Booking[]>([]);
+
+  useEffect(() => {
+    bookingsRef.current = bookings;
+  }, [bookings]);
+
   const [filter, setFilter] = useState<BookingStatus | 'all'>('all');
   const [typeFilter, setTypeFilter] = useState<BookingType | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [updateTrackingId, setUpdateTrackingId] = useState<string | null>(null);
   const [assignBayBookingId, setAssignBayBookingId] = useState<string | null>(null);
-  const [trackingNote, setTrackingNote] = useState('');
   const [showAdminPaymentQR, setShowAdminPaymentQR] = useState<{ amount?: number; bookingId?: string } | boolean>(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [successAnimationId, setSuccessAnimationId] = useState<string | null>(null);
@@ -219,42 +223,33 @@ const AdminDashboard = () => {
 
             if (isCafeOrder) {
               playVoice(`New cafe order from ${booking.userName}.`, 'Puck');
-              try {
-                const cafeAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/1117/1117-preview.mp3'); // Ding sound
-                cafeAudio.volume = 0.6;
-                cafeAudio.play().catch(e => console.log('Audio play failed:', e));
-              } catch (err) {
-                console.error('Audio error:', err);
-              }
+            } else {
+              playVoice(`New booking from ${booking.userName} for ${getServiceDisplayName(booking.type)}.`, 'Zephyr');
             }
           } else if (change.type === 'modified') {
-            const oldBooking = bookings.find(b => b.id === booking.id);
-            if (oldBooking && oldBooking.status !== 'cancelled' && booking.status === 'cancelled') {
-              // Special notification for cancellation
-              addNotification({
-                id: `cancel-${booking.id}-${Date.now()}`,
-                title: 'Booking Cancelled',
-                message: `${booking.userName}'s order for ${booking.resourceName} has been cancelled.`,
-                type: 'update',
-                time: Date.now()
-              });
-              playVoice("Attention. An order has been cancelled.", 'Zephyr');
-              // Specific cancellation sound
-              try {
-                const cancelAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/2569/2569-preview.mp3');
-                cancelAudio.volume = 0.5;
-                cancelAudio.play().catch(e => console.log('Audio play failed:', e));
-              } catch (err) {
-                console.error('Audio error:', err);
+            const oldBooking = bookingsRef.current.find(b => b.id === booking.id);
+            if (oldBooking) {
+              if (oldBooking.status !== booking.status) {
+                if (booking.status === 'cancelled') {
+                  addNotification({
+                    id: `cancel-${booking.id}-${Date.now()}`,
+                    title: 'Booking Cancelled',
+                    message: `${booking.userName}'s order for ${booking.resourceName} has been cancelled.`,
+                    type: 'cancel',
+                    time: Date.now()
+                  });
+                  playVoice(`Attention. ${booking.userName}'s booking for ${getServiceDisplayName(booking.type)} has been cancelled.`, 'Zephyr');
+                } else {
+                  addNotification({
+                    id: `update-${booking.id}-${Date.now()}`,
+                    title: 'Status Updated',
+                    message: `${booking.userName}'s ${getServiceDisplayName(booking.type)} is now ${booking.status}`,
+                    type: 'update',
+                    time: Date.now()
+                  });
+                  playVoice(`${booking.userName}'s ${getServiceDisplayName(booking.type)} is now ${booking.status}.`, 'Zephyr');
+                }
               }
-            } else {
-              addNotification({
-                id: `update-${booking.id}-${Date.now()}`,
-                title: 'Status Updated',
-                message: `${booking.userName}'s ${booking.type} is now ${booking.status}`,
-                type: 'update',
-                time: Date.now()
-              });
             }
           }
         });
@@ -309,7 +304,7 @@ const AdminDashboard = () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              to: 'admin@hubstation.com', // fallback or real admin email
+              to: 'manojmaddy93933@gmail.com', // Updated for testing with specific verified recipient
               subject: `⚠️ OVERDUE ACTION REQUIRED: ${booking.userName}`,
               html: `
                 <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 15px; background-color: #fafafa;">
@@ -341,9 +336,16 @@ const AdminDashboard = () => {
   const addNotification = (notif: Notification) => {
     setNotifications(prev => [notif, ...prev].slice(0, 5));
     
-    // Play notification sound
+    // Play notification sound depending on type
     try {
-      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3');
+      let soundUrl = 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'; // new booking sound
+      if (notif.type === 'cancel') {
+        soundUrl = 'https://assets.mixkit.co/active_storage/sfx/2569/2569-preview.mp3'; // alert sound
+      } else if (notif.type === 'update') {
+        soundUrl = 'https://assets.mixkit.co/active_storage/sfx/1117/1117-preview.mp3'; // updated indicator
+      }
+
+      const audio = new Audio(soundUrl);
       audio.volume = 0.4;
       audio.play().catch(e => console.log('Audio play failed:', e));
     } catch (err) {
@@ -714,24 +716,9 @@ const AdminDashboard = () => {
 
   const handleStartCarWash = async (bookingId: string, bay: string) => {
     await handleStatusUpdate(bookingId, 'ongoing', { 
-      bay,
-      tracking: {
-        statusUpdate: `Car is in ${bay}`,
-        lastUpdated: Date.now()
-      }
+      bay
     });
     setAssignBayBookingId(null);
-  };
-
-  const handleTrackingUpdate = async (id: string) => {
-    await bookingService.updateBookingStatus(id, 'ongoing', {
-      tracking: {
-        statusUpdate: trackingNote,
-        lastUpdated: Date.now()
-      }
-    });
-    setUpdateTrackingId(null);
-    setTrackingNote('');
   };
 
   const filteredBookings = bookings.filter(b => {
@@ -1168,6 +1155,16 @@ const AdminDashboard = () => {
                        {getServiceIcon(booking.type, 12)}
                        {getServiceDisplayName(booking.type)}
                     </span>
+                    {booking.id === 'booking_id_123' && (
+                      <span className={`text-[10px] flex items-center gap-1.5 font-black px-3 py-1 rounded-full border uppercase tracking-widest ${
+                        booking.status === 'pending' ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' : 
+                        booking.status === 'ongoing' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 
+                        booking.status === 'completed' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 
+                        'bg-red-500/10 text-red-500 border-red-500/20'
+                      }`}>
+                        Status: {booking.status}
+                      </span>
+                    )}
                   </div>
                   <p className="text-[10px] font-bold text-zinc-500 mb-1 uppercase tracking-widest">
                     {booking.userEmail} {booking.userPhone && `• ${booking.userPhone}`}
@@ -1235,13 +1232,6 @@ const AdminDashboard = () => {
                   )}
                   {booking.status === 'ongoing' && (
                     <div className="flex gap-2">
-                      <button 
-                        onClick={() => setUpdateTrackingId(booking.id!)}
-                        className="p-3 bg-amber-500/10 text-amber-500 rounded-xl hover:bg-accent hover:text-zinc-900 transition-all border border-amber-500/20"
-                        title="Update Tracking"
-                      >
-                        <MapPin size={20} />
-                      </button>
                       {booking.type === 'carWash' && (
                         <button 
                           onClick={() => setAssignBayBookingId(booking.id!)}
@@ -1430,70 +1420,6 @@ const AdminDashboard = () => {
             </div>
 
 
-            {updateTrackingId === booking.id && (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="mt-6 p-6 bg-zinc-950 rounded-[2rem] flex flex-col gap-6 border border-zinc-800 shadow-xl"
-              >
-                <div>
-                  <h5 className="text-[12px] font-black text-slate-100 uppercase tracking-widest italic mb-4">Quick Tracking Presets</h5>
-                  <div className="flex flex-wrap gap-2">
-                    {(booking.type === 'carWash' ? [
-                      'Washing in progress...',
-                      'Drying & Detailing...',
-                      'Polishing exterior...',
-                      'Final Quality Check...',
-                      'Ready for pickup!'
-                    ] : [
-                      'Players Checked-in',
-                      'Session Started',
-                      'Technical Maintenance',
-                      'Warm-up period',
-                      'Last 5 minutes'
-                    ]).map(preset => (
-                      <button 
-                        key={preset}
-                        onClick={() => setTrackingNote(preset)}
-                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
-                          trackingNote === preset ? 'bg-accent border-accent text-zinc-950' : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-slate-100'
-                        }`}
-                      >
-                        {preset}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex flex-col md:flex-row gap-4 items-end">
-                  <div className="flex-1 w-full">
-                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-3 px-1">Custom Live Status Note</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Technician is drying the interior..." 
-                      className="input-field"
-                      value={trackingNote}
-                      onChange={(e) => setTrackingNote(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => setUpdateTrackingId(null)}
-                      className="btn-secondary h-12"
-                    >
-                      Close
-                    </button>
-                    <button 
-                      onClick={() => handleTrackingUpdate(booking.id!)}
-                      className="btn-primary h-12"
-                    >
-                      Publish Update
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
             {assignBayBookingId === booking.id && (
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -1514,7 +1440,7 @@ const AdminDashboard = () => {
                 </div>
                 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {['BAY 1', 'BAY 2', 'BAY 3', 'BAY 4'].map((bay) => (
+                  {['BAY 1', 'BAY 2'].map((bay) => (
                     <button
                       key={bay}
                       onClick={() => handleStartCarWash(booking.id!, bay)}

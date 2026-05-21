@@ -77,7 +77,7 @@ service cloud.firestore {
       // Admin specific action updates
       allow update: if isAdmin() && (
         // Action: Update status
-        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'tracking']) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status']) &&
         incoming().status in ['ongoing', 'completed', 'cancelled']
       );
 

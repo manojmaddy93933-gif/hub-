@@ -89,7 +89,9 @@ export const emailService = {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to send email');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Email API Error Details:', errorData);
+        throw new Error(errorData.error || 'Failed to send email');
       }
 
       return await response.json();

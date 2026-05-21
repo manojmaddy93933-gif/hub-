@@ -95,7 +95,7 @@ const Home = () => {
     {
       id: 'carwash',
       title: 'Luxe Car Wash Detailing',
-      description: 'Professional 2-bay service hub with real-time status.',
+      description: 'Professional 2-bay service hub with premium detailing.',
       icon: <Car size={24} />,
       image: carWashImg,
       link: '/bookings',
@@ -141,7 +141,7 @@ const Home = () => {
     {
       name: 'Adithya Varma',
       role: 'Regular Customer',
-      content: 'The car wash quality is unmatched. I love hanging out at the AURA cafe while my SUV gets treated. The real-time tracking is a game changer!',
+      content: 'The car wash quality is unmatched. I love hanging out at the AURA cafe while my SUV gets treated. The service is top-notch!',
       rating: 5,
       avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=1974&auto=format&fit=crop'
     },
@@ -386,14 +386,14 @@ const Home = () => {
                 Expert <br />Service Station
               </h2>
               <p className="text-zinc-500 mb-10 leading-relaxed text-lg font-medium">
-                Equipped with high-performance bays, we deliver showroom-quality detailing. 
-                Enjoy real-time tracking while you relax in our lounge.
+                Equipped with two high-performance bays, we deliver showroom-quality detailing. 
+                Relax in our premium lounge while we treat your vehicle.
               </p>
               <div className="space-y-6">
                 {[
                   { label: 'Basic Wash', price: '₹500' },
-                  { label: 'Premium Wash', price: '₹800' },
-                  { label: 'Deep Clean Service', price: '₹1300' },
+                  { label: 'Premium Wash', price: '₹1200' },
+                  { label: 'Deep Clean Service', price: '₹2200' },
                 ].map((item, i) => (
                   <motion.div 
                     key={i} 

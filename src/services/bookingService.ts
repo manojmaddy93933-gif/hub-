@@ -72,11 +72,7 @@ export const bookingService = {
       const now = Date.now();
       await updateDoc(doc(db, 'bookings', bookingId), {
         status: 'ongoing',
-        checkedInAt: now,
-        tracking: {
-          statusUpdate: 'Customer Checked-In',
-          lastUpdated: now
-        }
+        checkedInAt: now
       });
       return true;
     } catch (error) {

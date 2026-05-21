@@ -36,16 +36,7 @@
         "status": { "type": "string", "enum": ["pending", "ongoing", "completed", "cancelled"] },
         "priority": { "type": "string", "enum": ["low", "medium", "high"] },
         "price": { "type": "number" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "tracking": {
-          "type": "object",
-          "properties": {
-            "latitude": { "type": "number" },
-            "longitude": { "type": "number" },
-            "lastUpdated": { "type": "string", "format": "date-time" },
-            "statusUpdate": { "type": "string" }
-          }
-        }
+        "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "type", "date", "status", "price"]
     },

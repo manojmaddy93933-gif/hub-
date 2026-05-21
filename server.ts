@@ -29,28 +29,48 @@ async function startServer() {
   app.post("/api/send-email", async (req, res) => {
     const { to, subject, html } = req.body;
 
+    if (!to) {
+      return res.status(400).json({ error: "Recipient 'to' is required" });
+    }
+
     if (!resend) {
       console.warn("RESEND_API_KEY is not set. Email not sent.");
       return res.status(200).json({ message: "Skipped sending email (no API key)" });
     }
 
     try {
+      const fromEmail = process.env.FROM_EMAIL || 'onboarding@resend.dev';
+      
+      // Resend sandbox (onboarding@resend.dev) sometimes has issues with display names
+      // or requires sending ONLY to the verified account owner email.
+      const from = fromEmail === 'onboarding@resend.dev' 
+        ? 'onboarding@resend.dev' 
+        : `Hub Station <${fromEmail}>`;
+
       const { data, error } = await resend.emails.send({
-        from: 'Hub Experience <notifications@hubcafe.com>', // Note: Use a verified domain in production
-        to: [to],
+        from,
+        to: Array.isArray(to) ? to : [to],
         subject: subject,
         html: html,
       });
 
       if (error) {
-        console.error("Resend Error:", error);
-        return res.status(400).json({ error });
+        console.error("Resend API Error:", JSON.stringify(error, null, 2));
+        const resendError = error as any;
+        return res.status(400).json({ 
+          error: resendError.message || "Email validation error",
+          name: resendError.name,
+          details: resendError.details || "Check Resend dashboard for domain verification status. If using onboarding@resend.dev, ensure the recipient email is verified in your Resend account."
+        });
       }
 
       res.status(200).json({ data });
     } catch (err) {
-      console.error("Failed to send email:", err);
-      res.status(500).json({ error: "Internal server error" });
+      console.error("Critical email failure:", err);
+      res.status(500).json({ 
+        error: "Internal server error", 
+        message: err instanceof Error ? err.message : String(err) 
+      });
     }
   });
 

@@ -6,23 +6,53 @@ export const playVoice = async (text: string, voice: 'Zephyr' | 'Puck' | 'Charon
       body: JSON.stringify({ text, voice }),
     });
 
-    if (!response.ok) throw new Error('TTS request failed');
+    if (!response.ok) {
+      throw new Error(`TTS server HTTP error ${response.status}`);
+    }
 
-    const { audio } = await response.json();
+    const { audio, message } = await response.json();
     if (audio) {
-      const audioBlob = b64toBlob(audio, 'audio/pcm');
-      const audioUrl = URL.createObjectURL(audioBlob);
-      
-      // Since it's raw PCM at 24000Hz (from Gemini TTS docs), we might need an AudioContext
-      // However, usually returned base64 for TTS in browser is playable if it's in a package like WAV.
-      // The skill says "sample rate 24000" for raw audio.
-      // Wait, let's look at the skill again. 
-      // "Return this base64 audio to the client for playback (sample rate 24000)"
-      
       await playRawPCM(audio);
+    } else {
+      console.warn('Gemini TTS returned no audio, using Web Speech API fallback:', message || 'No message provided');
+      playWebSpeechFallback(text);
     }
   } catch (error) {
-    console.error('Voice Service Error:', error);
+    console.warn('Gemini TTS failed, falling back to Web Speech API:', error);
+    playWebSpeechFallback(text);
+  }
+};
+
+const playWebSpeechFallback = (text: string) => {
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    try {
+      // Cancel any ongoing speaking to avoid overlapping delays
+      window.speechSynthesis.cancel();
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.pitch = 1.0;
+      utterance.rate = 1.0;
+      
+      // Select standard English voices if available for a clean presentation
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        const englishVoice = voices.find(v => v.lang.startsWith('en') && (
+          v.name.toLowerCase().includes('google') || 
+          v.name.toLowerCase().includes('natural') || 
+          v.name.toLowerCase().includes('premium')
+        )) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+        
+        if (englishVoice) {
+          utterance.voice = englishVoice;
+        }
+      }
+      
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.error('Web Speech Fallback failed:', e);
+    }
+  } else {
+    console.warn('Web Speech Synthesis is not supported in this browser.');
   }
 };
 

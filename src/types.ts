@@ -49,12 +49,6 @@ export interface Booking {
   checkedInAt?: number;
   bay?: string;
   createdAt: number;
-  tracking?: {
-    latitude?: number;
-    longitude?: number;
-    lastUpdated: number;
-    statusUpdate: string;
-  };
 }
 
 export interface Worker {
