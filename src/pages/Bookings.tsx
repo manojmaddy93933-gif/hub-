@@ -54,6 +54,7 @@ const Bookings = () => {
   const [notes, setNotes] = useState('');
   const [showQR, setShowQR] = useState<string | null>(null);
   const [activePendingBooking, setActivePendingBooking] = useState<Booking | null>(null);
+  const [discountType, setDiscountType] = useState<string>('');
 
   const resetForm = () => {
     setResourceId('');
@@ -63,6 +64,7 @@ const Bookings = () => {
     setVehicleYear('');
     setVehiclePhotoUrl(null);
     setNotes('');
+    setDiscountType('');
     setPolicyAccepted(false);
     setDate(new Date().toISOString().split('T')[0]);
     setStartTime('10:00');
@@ -83,37 +85,8 @@ const Bookings = () => {
 
   useEffect(() => {
     if (user) {
-      const unsubscribe = bookingService.subscribeToUserBookings(user.uid, (data, changes) => {
+      const unsubscribe = bookingService.subscribeToUserBookings(user.uid, (data) => {
         setMyBookings(data);
-        
-        // Update active pending booking for the current tab
-        const pending = data.find(b => b.type === activeTab && b.status === 'pending');
-        setActivePendingBooking(pending || null);
-
-        if (isFirstLoad.current) {
-          isFirstLoad.current = false;
-          return;
-        }
-
-        if (changes && Array.isArray(changes)) {
-          changes.forEach(change => {
-            const booking = { id: change.doc.id, ...change.doc.data() } as Booking;
-            if (change.type === 'modified') {
-              // We need to compare with previous state if possible, or just check the new status
-              // Actually, since this is specific to this user, if we see a change to 'cancelled', it's likely a news
-              if (booking.status === 'cancelled') {
-                playVoice("Your order has been cancelled.", 'Kore');
-                try {
-                  const cancelAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/2569/2569-preview.mp3');
-                  cancelAudio.volume = 0.5;
-                  cancelAudio.play().catch(e => console.log('Audio play failed:', e));
-                } catch (err) {
-                  console.error('Audio error:', err);
-                }
-              }
-            }
-          });
-        }
       });
       return () => unsubscribe();
     }
@@ -139,6 +112,40 @@ const Bookings = () => {
     };
     reader.readAsDataURL(file);
   };
+  
+  const getBookingPriceDetails = () => {
+    if (!resourceId) return { basePrice: 0, discount: 0, finalPrice: 0, resourceName: '' };
+
+    let price = 0;
+    let name = '';
+
+    if (activeTab === 'game') {
+      const game = Object.values(RATES.GAMES).find(g => g.name === resourceId);
+      price = game?.rate || 0;
+      name = resourceId;
+    } else if (activeTab === 'carWash') {
+      const wash = RATES.CAR_WASH.find(w => w.type === resourceId);
+      price = wash?.price || 0;
+      name = resourceId;
+    } else if (activeTab === 'badminton') {
+      price = resourceId === '2 Hours' ? RATES.BADMINTON.rate2h : RATES.BADMINTON.rate1h;
+      name = `Badminton Court (${resourceId})`;
+    } else if (activeTab === 'theatre') {
+      if (resourceId === '1 Hour') price = RATES.THEATRE.rate1h;
+      else if (resourceId === '2 Hours') price = RATES.THEATRE.rate2h;
+      else if (resourceId === '5 Hours') price = RATES.THEATRE.rate5h;
+      else if (resourceId === 'Get Together Party') price = RATES.THEATRE.getTogether;
+      name = resourceId === 'Get Together Party' ? 'Get Together Party' : `Birthday Theatre (${resourceId})`;
+    } else if (activeTab === 'cafe') {
+      price = RATES.CAFE.tableBooking;
+      name = `AURA Cafe Table (${resourceId})`;
+    }
+
+    const discount = discountType ? Math.round(price * 0.1) : 0;
+    const finalPrice = price - discount;
+
+    return { basePrice: price, discount, finalPrice, resourceName: name };
+  };
 
   const handleBooking = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,29 +153,7 @@ const Bookings = () => {
     setLoading(true);
 
     try {
-      let price = 0;
-      let resourceName = '';
-
-      if (activeTab === 'game') {
-        const game = Object.values(RATES.GAMES).find(g => g.name === resourceId);
-        price = game?.rate || 0;
-        resourceName = resourceId;
-      } else if (activeTab === 'carWash') {
-        const wash = RATES.CAR_WASH.find(w => w.type === resourceId);
-        price = wash?.price || 0;
-        resourceName = resourceId;
-      } else if (activeTab === 'badminton') {
-        price = resourceId === '2 Hours' ? RATES.BADMINTON.rate2h : RATES.BADMINTON.rate1h;
-        resourceName = `Badminton Court (${resourceId})`;
-      } else if (activeTab === 'theatre') {
-        if (resourceId === '1 Hour') price = RATES.THEATRE.rate1h;
-        else if (resourceId === '2 Hours') price = RATES.THEATRE.rate2h;
-        else if (resourceId === '5 Hours') price = RATES.THEATRE.rate5h;
-        resourceName = `Birthday Theatre (${resourceId})`;
-      } else if (activeTab === 'cafe') {
-        price = RATES.CAFE.tableBooking;
-        resourceName = `AURA Cafe Table (${resourceId})`;
-      }
+      const { basePrice, discount, finalPrice, resourceName } = getBookingPriceDetails();
 
       const bookingData: any = {
         userId: user.uid,
@@ -182,10 +167,13 @@ const Bookings = () => {
         startTime,
         endTime: '', // Calculated on backend or simple offset
         duration: activeTab === 'badminton' ? (resourceId === '2 Hours' ? 2 : 1) : 
-                  activeTab === 'theatre' ? (resourceId === '5 Hours' ? 5 : (resourceId === '2 Hours' ? 2 : 1)) : 
+                  activeTab === 'theatre' ? (resourceId === 'Get Together Party' ? 3 : (resourceId === '5 Hours' ? 5 : (resourceId === '2 Hours' ? 2 : 1))) : 
                   activeTab === 'cafe' ? 1 : 1,
         status: 'pending',
-        price,
+        price: finalPrice,
+        originalPrice: basePrice,
+        discountType: discountType || null,
+        discountAmount: discount || null,
         notes: notes.trim(),
         createdAt: Date.now(),
       };
@@ -304,6 +292,8 @@ const Bookings = () => {
         </motion.div>
       </div>
 
+
+
       {/* Booking Form */}
       <div className="lg:col-span-5">
         <div className="bg-zinc-900 rounded-[2.5rem] p-8 border border-zinc-800 shadow-2xl">
@@ -365,6 +355,7 @@ const Bookings = () => {
                     <option value="1 Hour">1 Hour (₹{RATES.THEATRE.rate1h})</option>
                     <option value="2 Hours">2 Hours (₹{RATES.THEATRE.rate2h})</option>
                     <option value="5 Hours">5 Hours (₹{RATES.THEATRE.rate5h})</option>
+                    <option value="Get Together Party">Get Together Party (₹{RATES.THEATRE.getTogether})</option>
                   </>
                 )}
                 {activeTab === 'cafe' && (
@@ -580,21 +571,7 @@ const Bookings = () => {
               )}
             </AnimatePresence>
 
-            {/* Universal Notes Field */}
-            <div>
-              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 px-1">Special Instructions / Notes</label>
-              <div className="relative">
-                <FileText className="absolute left-4 top-4 text-zinc-600" size={18} />
-                <textarea 
-                  placeholder={activeTab === 'carWash' 
-                    ? "List any existing scratches, dents, or specific cleaning focus..." 
-                    : "Any special requests or details we should know about?"}
-                  className="input-field pl-12 py-4 h-24 resize-none"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                />
-              </div>
-            </div>
+
 
             <div>
               <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 px-1">Contact Number</label>
@@ -610,6 +587,69 @@ const Bookings = () => {
                 />
               </div>
             </div>
+
+            <div>
+              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 px-1">Special Discount Eligibility</label>
+              <select 
+                value={discountType}
+                onChange={(e) => setDiscountType(e.target.value)}
+                className="input-field cursor-pointer"
+              >
+                <option value="">No Special Discount</option>
+                <option value="College Student">College Student (10% Off)</option>
+                <option value="Medical Student">Medical Student (10% Off)</option>
+                <option value="Doctor">Doctor (10% Off)</option>
+                <option value="Teacher">Teacher (10% Off)</option>
+              </select>
+              {discountType && (
+                <p className="mt-1.5 text-[10px] text-emerald-400 font-bold uppercase tracking-wider px-1">
+                  🎉 10% discount applied! Please present physical ID verification at check-in.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 px-1">
+                Verification Details / Notes <span className="text-zinc-600 font-medium lowercase italic">(optional)</span>
+              </label>
+              <textarea 
+                placeholder={discountType ? "Enter student ID, institute name, or professional registration details..." : "Enter extra notes or special requests..."}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                className="input-field py-3 resize-none" 
+              />
+            </div>
+
+            {/* Pristine Pricing Breakdown Panel */}
+            {resourceId && (
+              <div className="p-5 bg-gradient-to-br from-zinc-950 to-zinc-900 border border-zinc-800 rounded-3xl space-y-3 relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-3 opacity-10">
+                  <IndianRupee size={48} className="text-emerald-500" />
+                </div>
+                
+                <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-0.5">Estimated Charges</h3>
+                
+                <div className="space-y-2 text-xs divide-y divide-zinc-900/50">
+                  <div className="flex justify-between items-center text-zinc-400">
+                    <span>Base Fare ({getBookingPriceDetails().resourceName})</span>
+                    <span className="font-bold">₹{getBookingPriceDetails().basePrice}</span>
+                  </div>
+                  
+                  {discountType && (
+                    <div className="flex justify-between items-center text-emerald-400 pt-2 font-semibold">
+                      <span>Special 10% Discount ({discountType})</span>
+                      <span>-₹{getBookingPriceDetails().discount}</span>
+                    </div>
+                  )}
+                  
+                  <div className="flex justify-between items-center text-white pt-2 font-black text-sm">
+                    <span className="uppercase tracking-wide">Total Payable</span>
+                    <span className="text-emerald-500 italic">₹{getBookingPriceDetails().finalPrice}</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl">
               <div className="flex items-center gap-2 mb-3 text-amber-500">
@@ -761,6 +801,11 @@ const Bookings = () => {
                         <span className="flex items-center gap-1"><Calendar size={12} /> {booking.date}</span>
                         <span className="flex items-center gap-1"><Clock size={12} /> {booking.startTime}</span>
                       </div>
+                      {booking.discountType && (
+                        <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-[9px] font-black uppercase tracking-widest mt-2">
+                          🌱 {booking.discountType} (10% Off)
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">

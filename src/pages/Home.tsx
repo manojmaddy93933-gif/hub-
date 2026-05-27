@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Car, Gamepad2, Trophy, Clock, Users, ArrowRight, Coffee, Monitor, Star, Play, Quote, CheckCircle2, Search } from 'lucide-react';
+import { Car, Gamepad2, Trophy, Clock, Users, ArrowRight, Coffee, Monitor, Star, Quote, CheckCircle2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import carWashImg from '../assets/images/car_wash_bay_vibe_1778742611946.png';
 import gamesImg from '../assets/images/games_vibe_1778742630317.png';
@@ -9,16 +9,6 @@ import badmintonImg from '../assets/images/badminton_vibe_1778742647583.png';
 import { MapSection } from '../components/MapSection';
 
 const Home = () => {
-  const [searchQuery, setSearchQuery] = React.useState('');
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchQuery.trim()) return;
-    // Search Google for the query, restricting to site if intended or just general
-    // Given the prompt "add google search https: hub station app.com", we'll search hub station app specifically
-    const url = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}+hubstationapp.com`;
-    window.open(url, '_blank');
-  };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -116,26 +106,7 @@ const Home = () => {
     }
   ];
 
-  const videos = [
-    {
-      title: 'Car Detailing Process',
-      thumbnail: 'https://images.unsplash.com/photo-1601362840469-51e4d8d59085?q=80&w=2070&auto=format&fit=crop',
-      duration: '0:45',
-      category: 'Pro Service'
-    },
-    {
-      title: 'AURA Cafe Experience',
-      thumbnail: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?q=80&w=2070&auto=format&fit=crop',
-      duration: '1:20',
-      category: 'Lifestyle'
-    },
-    {
-      title: 'Gaming Zone Tour',
-      thumbnail: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=2071&auto=format&fit=crop',
-      duration: '0:30',
-      category: 'Virtual Tour'
-    }
-  ];
+
 
   const reviews = [
     {
@@ -217,32 +188,6 @@ const Home = () => {
               Gourmet menu, social gaming, and professional car detailing.
             </motion.p>
 
-            <motion.form 
-              onSubmit={handleSearch}
-              variants={{
-                hidden: { opacity: 0, y: 20 },
-                visible: { opacity: 1, y: 0 }
-              }}
-              className="relative max-w-md mb-10 group"
-            >
-              <div className="absolute inset-y-0 left-5 flex items-center pointer-events-none text-zinc-500 group-focus-within:text-accent transition-colors">
-                <Search size={20} />
-              </div>
-              <input 
-                type="text"
-                placeholder="Search hubstationapp.com..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl py-4 pl-14 pr-6 text-slate-100 placeholder:text-zinc-600 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-all font-medium"
-              />
-              <button 
-                type="submit"
-                className="absolute right-2 top-2 bottom-2 px-6 bg-accent text-zinc-950 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-white transition-all"
-              >
-                Search
-              </button>
-            </motion.form>
-
             <motion.div 
               variants={{
                 hidden: { opacity: 0, scale: 0.9 },
@@ -317,52 +262,7 @@ const Home = () => {
         </div>
       </motion.section>
 
-      {/* Pro Videos Section */}
-      <section className="max-w-7xl mx-auto px-4 mt-32">
-        <div className="mb-12">
-          <h2 className="text-3xl md:text-5xl font-bold text-slate-100 italic uppercase tracking-tighter mb-4">
-            Pro <span className="text-accent">Working Videos</span>
-          </h2>
-          <p className="text-sm font-black text-zinc-500 uppercase tracking-widest">See how we deliver excellence at the hub</p>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {videos.map((vid, idx) => (
-            <motion.div 
-              key={idx}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: idx * 0.1 }}
-              className="group relative rounded-[2rem] overflow-hidden bg-zinc-900 border border-zinc-800"
-            >
-              <div className="aspect-video relative overflow-hidden">
-                <img 
-                  src={vid.thumbnail} 
-                  alt={vid.title} 
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 grayscale-[0.3]" 
-                />
-                <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-all flex items-center justify-center">
-                  <div className="w-14 h-14 bg-accent/90 rounded-full flex items-center justify-center text-zinc-950 shadow-xl shadow-accent/20 group-hover:scale-110 transition-transform">
-                    <Play size={24} fill="currentColor" />
-                  </div>
-                </div>
-                <div className="absolute top-4 left-4">
-                  <span className="bg-zinc-950/80 backdrop-blur-md border border-white/10 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-[0.2em] text-accent">
-                    {vid.category}
-                  </span>
-                </div>
-                <div className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md px-2 py-0.5 rounded text-[8px] font-black text-white">
-                  {vid.duration}
-                </div>
-              </div>
-              <div className="p-6">
-                <h4 className="text-sm font-bold text-slate-100 uppercase tracking-tight">{vid.title}</h4>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </section>
+
 
       {/* Info Section */}
       <section className="max-w-7xl mx-auto px-4 mt-32">

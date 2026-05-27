@@ -1,4 +1,7 @@
 export const playVoice = async (text: string, voice: 'Zephyr' | 'Puck' | 'Charon' | 'Kore' | 'Fenrir' = 'Zephyr') => {
+  if (typeof window !== 'undefined' && localStorage.getItem('system_alerts_enabled') === 'false') {
+    return;
+  }
   try {
     const response = await fetch('/api/gemini/tts', {
       method: 'POST',

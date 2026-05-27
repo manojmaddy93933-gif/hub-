@@ -10,9 +10,9 @@ export const BADMINTON_HOURS = [
 
 export const RATES = {
   GAMES: {
-    CARROM: { name: 'Carrom Table', tables: 2, rate: 80 },
-    CHESS: { name: 'Chess Table', tables: 1, rate: 50 },
-    LUDO: { name: 'Ludo Table', tables: 3, rate: 60 },
+    CARROM: { name: 'Carrom Table', tables: 2, rate: 100 },
+    CHESS: { name: 'Chess Table', tables: 1, rate: 100 },
+    LUDO: { name: 'Ludo Table', tables: 3, rate: 100 },
     FREE: { name: 'Free Table', tables: 3, rate: 0 }
   },
   CAR_WASH: [
@@ -27,7 +27,8 @@ export const RATES = {
   THEATRE: {
     rate1h: 1000,
     rate2h: 1500,
-    rate5h: 3500
+    rate5h: 3500,
+    getTogether: 3000
   },
   CAFE: {
     tableBooking: 200

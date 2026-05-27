@@ -44,6 +44,9 @@ export interface Booking {
   status: BookingStatus;
   priority?: BookingPriority;
   price: number;
+  discountType?: string;
+  discountAmount?: number;
+  originalPrice?: number;
   paymentStatus?: 'unpaid' | 'pending' | 'paid';
   paymentMethod?: 'upi' | 'cash' | 'card';
   checkedInAt?: number;

@@ -45,7 +45,12 @@ import {
   Briefcase,
   Plus,
   AlertTriangle,
-  Fingerprint
+  Fingerprint,
+  Activity,
+  Wifi,
+  Volume2,
+  VolumeX,
+  Terminal
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PaymentQR from '../components/PaymentQR';
@@ -116,7 +121,17 @@ const AdminDashboard = () => {
   const [assignBayBookingId, setAssignBayBookingId] = useState<string | null>(null);
   const [showAdminPaymentQR, setShowAdminPaymentQR] = useState<{ amount?: number; bookingId?: string } | boolean>(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(false);
   const [successAnimationId, setSuccessAnimationId] = useState<string | null>(null);
+  const [alertsEnabled, setAlertsEnabled] = useState(() => {
+    return localStorage.getItem('system_alerts_enabled') !== 'false';
+  });
+
+  const toggleAlerts = () => {
+    const newValue = !alertsEnabled;
+    setAlertsEnabled(newValue);
+    localStorage.setItem('system_alerts_enabled', String(newValue));
+  };
   
   // Security State
   const [isVerified, setIsVerified] = useState(false);
@@ -124,9 +139,10 @@ const AdminDashboard = () => {
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'last7' | 'custom'>('all');
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'upcoming' | 'last7' | 'custom'>('all');
   const [customRange, setCustomRange] = useState({ start: '', end: '' });
-  const [activeView, setActiveView] = useState<'bookings' | 'payments' | 'calendar' | 'workers' | 'cafeMenu'>('bookings');
+  const [activeView, setActiveView] = useState<'bookings' | 'payments' | 'calendar' | 'workers' | 'cafeMenu' | 'monitor'>('monitor');
+  const [monitorLogs, setMonitorLogs] = useState<{ id: string; time: string; message: string; type: 'info' | 'success' | 'warn' | 'error' }[]>([]);
   const [selectedBookings, setSelectedBookings] = useState<string[]>([]);
   const [viewDate, setViewDate] = useState(new Date());
   
@@ -182,8 +198,10 @@ const AdminDashboard = () => {
       };
 
       scanner.render(onScanSuccess, onScanFailure);
+      setIsCameraActive(true);
 
       return () => {
+        setIsCameraActive(false);
         scanner.clear().catch(err => console.log("Failed to clear scanner", err));
       };
     }
@@ -202,8 +220,14 @@ const AdminDashboard = () => {
 
       setBookings(data);
 
+      const timeStr = new Date().toLocaleTimeString();
+
       if (isFirstLoad.current) {
         isFirstLoad.current = false;
+        setMonitorLogs([
+          { id: 'init', time: timeStr, message: `Synchronized ${data.length} active records from cloud database nodes.`, type: 'success' },
+          { id: 'listening-init', time: timeStr, message: "Real-time sync listeners are now fully active & listening.", type: 'info' }
+        ]);
         return;
       }
 
@@ -213,6 +237,15 @@ const AdminDashboard = () => {
           
           if (change.type === 'added') {
             const isCafeOrder = booking.type === 'cafe';
+            const logMsg = isCafeOrder 
+              ? `☕ Live Cafe Order: ${booking.userName} ordered ${booking.resourceName}`
+              : `➕ Live Booking: ${booking.userName} reserved slot for ${getServiceDisplayName(booking.type)} (${booking.resourceName})`;
+            
+            setMonitorLogs(prev => [
+              { id: `log-${Date.now()}-${Math.random()}`, time: timeStr, message: logMsg, type: 'success' },
+              ...prev
+            ].slice(0, 50));
+
             addNotification({
               id: `new-${booking.id}-${Date.now()}`,
               title: isCafeOrder ? '☕ NEW CAFE ORDER' : `New Booking: ${booking.userName} - ${getServiceDisplayName(booking.type)}`,
@@ -230,6 +263,13 @@ const AdminDashboard = () => {
             const oldBooking = bookingsRef.current.find(b => b.id === booking.id);
             if (oldBooking) {
               if (oldBooking.status !== booking.status) {
+                const stepMsg = `🔄 Real-time Update: ${booking.userName}'s ${getServiceDisplayName(booking.type)} is now ${booking.status.toUpperCase()}`;
+                
+                setMonitorLogs(prev => [
+                  { id: `log-${Date.now()}-${Math.random()}`, time: timeStr, message: stepMsg, type: booking.status === 'cancelled' ? 'error' : 'warn' },
+                  ...prev
+                ].slice(0, 50));
+
                 if (booking.status === 'cancelled') {
                   addNotification({
                     id: `cancel-${booking.id}-${Date.now()}`,
@@ -732,6 +772,8 @@ const AdminDashboard = () => {
     
     if (dateFilter === 'today') {
       matchesDate = b.date === localToday;
+    } else if (dateFilter === 'upcoming') {
+      matchesDate = b.date > localToday;
     } else if (dateFilter === 'last7') {
       const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
       const localSevenDaysAgo = (new Date(sevenDaysAgo.getTime() - tzoffset)).toISOString().split('T')[0];
@@ -846,6 +888,18 @@ const AdminDashboard = () => {
             </span>
           </button>
 
+          <button 
+            onClick={toggleAlerts}
+            className={`flex items-center gap-3 px-6 py-4 rounded-[2rem] border transition-all shadow-2xl ${
+              alertsEnabled ? 'bg-zinc-900 border-emerald-500/40 text-emerald-500 hover:border-emerald-500' : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700'
+            }`}
+          >
+            {alertsEnabled ? <Volume2 size={20} className="animate-pulse" /> : <VolumeX size={20} />}
+            <span className="text-[10px] uppercase tracking-widest font-black">
+              {alertsEnabled ? 'Alerts ON' : 'Alerts OFF'}
+            </span>
+          </button>
+
           <div className="bg-zinc-900 px-6 py-4 rounded-[2rem] border border-zinc-800 flex items-center gap-6 shadow-2xl">
             <div className="text-center">
               <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-black mb-1">Queue</p>
@@ -909,10 +963,20 @@ const AdminDashboard = () => {
         </div>
       </section>
 
-      <div className="flex gap-4 mb-8 border-b border-zinc-800">
+      <div className="flex gap-4 mb-8 border-b border-zinc-800 overflow-x-auto">
+        <button 
+          onClick={() => setActiveView('monitor')}
+          className={`pb-4 px-6 text-sm font-black uppercase tracking-widest transition-all flex items-center gap-2.5 shrink-0 ${activeView === 'monitor' ? 'text-accent border-b-2 border-accent' : 'text-zinc-600 hover:text-zinc-400'}`}
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-accent"></span>
+          </span>
+          Live Monitor
+        </button>
         <button 
           onClick={() => setActiveView('bookings')}
-          className={`pb-4 px-6 text-sm font-black uppercase tracking-widest transition-all ${activeView === 'bookings' ? 'text-accent border-b-2 border-accent' : 'text-zinc-600 hover:text-zinc-400'}`}
+          className={`pb-4 px-6 text-sm font-black uppercase tracking-widest transition-all shrink-0 ${activeView === 'bookings' ? 'text-accent border-b-2 border-accent' : 'text-zinc-600 hover:text-zinc-400'}`}
         >
           Bookings
         </button>
@@ -1008,7 +1072,254 @@ const AdminDashboard = () => {
         )}
       </AnimatePresence>
 
-      {activeView === 'bookings' ? (
+      {activeView === 'monitor' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left columns: Monitor main counters and incoming lists */}
+          <div className="lg:col-span-2 space-y-8">
+            {/* Connection Diagnostics Banner */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500/30 to-accent/30" />
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center text-emerald-500">
+                  <Activity size={24} className="animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-black text-slate-100 uppercase tracking-widest">REAL-TIME MONITOR DESK</h3>
+                    <span className="flex h-2 w-2 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mt-0.5">Firestore Pipeline Connection: <span className="text-emerald-500 animate-pulse">online</span></p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => playVoice("Attention. Real-time voice diagnostic test executed successfully.", 'Zephyr')}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-800 hover:bg-zinc-800 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-slate-100 transition-all shadow-inner"
+                  id="test-voice-btn"
+                >
+                  <Volume2 size={14} />
+                  Test Voice Alerts
+                </button>
+                <div className="text-right">
+                  <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Pipeline Sync</p>
+                  <p className="text-xs font-mono text-zinc-400 leading-none">{new Date().toLocaleTimeString()}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Service occupy slot counters */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 text-center">
+                <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">Waiting Queue</p>
+                <p className="text-2xl font-black text-orange-500 leading-none">{bookings.filter(b => b.status === 'pending').length}</p>
+              </div>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 text-center">
+                <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">Active In Bays</p>
+                <p className="text-2xl font-black text-blue-500 leading-none">{bookings.filter(b => b.status === 'ongoing').length}</p>
+              </div>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 text-center">
+                <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">Completed Today</p>
+                <p className="text-2xl font-black text-emerald-500 leading-none">{bookings.filter(b => b.status === 'completed').length}</p>
+              </div>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 text-center">
+                <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">Cancelled Sessions</p>
+                <p className="text-2xl font-black text-red-500 leading-none">{bookings.filter(b => b.status === 'cancelled').length}</p>
+              </div>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 text-center col-span-2 sm:col-span-1 lg:col-span-1">
+                <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">Advance Pre-Bookings</p>
+                <p className="text-2xl font-black text-purple-500 leading-none">{bookings.filter(b => b.date > (new Date().toISOString().split('T')[0])).length}</p>
+              </div>
+            </div>
+
+            {/* Active Ongoing Sessions List */}
+            <div>
+              <div className="flex items-center justify-between mb-4 px-2">
+                <h4 className="text-xs font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Slot Workloads ({bookings.filter(b => b.status === 'ongoing').length})
+                </h4>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {bookings.filter(b => b.status === 'ongoing').map(booking => (
+                  <div key={booking.id} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between h-44 hover:border-accent/40 transition-colors">
+                    <div className="absolute top-0 right-0 p-4">
+                      <span className="text-[8px] font-black uppercase tracking-widest bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                        <span className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />
+                        {getServiceDisplayName(booking.type)}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-slate-100 uppercase tracking-tight truncate pr-16">{booking.userName}</p>
+                      <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mt-0.5">{booking.resourceName}</p>
+                      <p className="text-[8px] font-mono text-zinc-600 uppercase mt-1">ID: {booking.id?.substring(0, 8)}</p>
+                    </div>
+                    <div className="pt-4 border-t border-zinc-950 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-emerald-500">
+                        <Clock size={12} className="animate-spin" style={{ animationDuration: '4s' }} />
+                        <span className="text-[10px] font-mono font-black uppercase">Active Slot</span>
+                      </div>
+                      <button
+                        onClick={() => handleStatusUpdate(booking.id!, 'completed')}
+                        className="px-4 py-2 bg-emerald-500 text-zinc-950 font-black text-[9px] uppercase tracking-wider rounded-xl transition-all hover:bg-white active:scale-95"
+                      >
+                        Finish & Release
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {bookings.filter(b => b.status === 'ongoing').length === 0 && (
+                  <div className="col-span-full py-12 text-center bg-zinc-900/40 border border-zinc-800 border-dashed rounded-[2.5rem] flex flex-col items-center justify-center p-8">
+                    <Activity size={32} className="text-zinc-800 mb-2 opacity-30" />
+                    <p className="text-[10px] font-black text-zinc-550 uppercase tracking-widest">No active workloads in bays currently</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Pending Check-in Pipeline Queue */}
+            <div>
+              <div className="flex items-center justify-between mb-4 px-2">
+                <h4 className="text-xs font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+                  Upcoming Session Queue ({bookings.filter(b => b.status === 'pending').length})
+                </h4>
+              </div>
+              <div className="space-y-3">
+                {bookings.filter(b => b.status === 'pending').slice(0, 8).map(booking => (
+                  <div key={booking.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-zinc-700 transition-colors">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-400">
+                        {getServiceIcon(booking.type, 20)}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-bold text-slate-100">{booking.userName}</p>
+                          <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
+                            booking.priority === 'high' ? 'bg-red-500/10 text-red-500' :
+                            booking.priority === 'medium' ? 'bg-amber-500/10 text-amber-500' :
+                            'bg-zinc-800 text-zinc-500'
+                          }`}>
+                            {booking.priority}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider mt-0.5">
+                          {getServiceDisplayName(booking.type)} • {booking.resourceName} • Sch: {booking.startTime}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                      <button 
+                        onClick={() => handleStatusUpdate(booking.id!, 'ongoing')}
+                        className="flex-1 sm:flex-none px-4 py-2 bg-accent text-zinc-950 font-black text-[9px] uppercase tracking-widest rounded-xl hover:bg-white active:scale-95 transition-all"
+                      >
+                        Start Session
+                      </button>
+                      <button 
+                        onClick={() => handleStatusUpdate(booking.id!, 'cancelled')}
+                        className="px-3.5 py-2 border border-zinc-800 hover:bg-zinc-850 hover:text-red-500 text-zinc-650 text-[9px] font-black uppercase tracking-widest rounded-xl transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {bookings.filter(b => b.status === 'pending').length === 0 && (
+                  <div className="py-12 text-center bg-zinc-900/40 border border-zinc-800 border-dashed rounded-[2.5rem] flex flex-col items-center justify-center p-8">
+                    <CheckCircle2 size={32} className="text-zinc-800 mb-2 opacity-30" />
+                    <p className="text-[10px] font-black text-zinc-550 uppercase tracking-widest">Incoming dispatch channel completely clear!</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right column: Indicators and Raw live transactions terminal */}
+          <div className="space-y-8">
+            {/* Connection Telemetry Indicators */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-6">
+              <h4 className="text-xs font-black text-zinc-500 uppercase tracking-widest mb-4 px-1 flex items-center gap-2">
+                <Wifi size={14} className="text-accent animate-pulse" />
+                Live Status Indicators
+              </h4>
+              <div className="space-y-4">
+                <button 
+                  onClick={toggleAlerts}
+                  className="w-full text-left p-4 bg-zinc-950 border border-zinc-850 hover:border-zinc-700 rounded-2xl flex items-center justify-between transition-colors focus:outline-none"
+                >
+                  <div>
+                    <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-0.5">Diagnostic Audio</p>
+                    <p className="text-xs font-bold text-slate-100">AI Speech Synthesizer</p>
+                  </div>
+                  <span className={`text-[8px] font-black px-2.5 py-1 rounded-full border transition-all ${
+                    alertsEnabled 
+                      ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500 uppercase tracking-widest' 
+                      : 'border-zinc-800 bg-zinc-900 text-zinc-500 uppercase tracking-widest'
+                  }`}>
+                    {alertsEnabled ? 'ACTIVE' : 'MUTED'}
+                  </span>
+                </button>
+                <div className="p-4 bg-zinc-950 border border-zinc-850 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-0.5">Database Sync</p>
+                    <p className="text-xs font-bold text-slate-100">Firestore Listener Node</p>
+                  </div>
+                  <span className="text-[8px] font-black px-2.5 py-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-500 uppercase tracking-widest animate-pulse">
+                    CONNECTED
+                  </span>
+                </div>
+                <div className="p-4 bg-zinc-950 border border-zinc-850 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-0.5">Telemetry Rate</p>
+                    <p className="text-xs font-bold text-slate-100">Sync Signal Stream</p>
+                  </div>
+                  <span className="text-[8px] font-mono font-bold text-accent">
+                    REAL-TIME
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Live System Operation terminal ticker */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-6 flex flex-col h-[480px]">
+              <div className="flex items-center justify-between mb-4 border-b border-zinc-800 pb-3">
+                <h4 className="text-xs font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2 px-1">
+                  <Terminal size={14} className="text-emerald-500" />
+                  REAL-TIME PIPELINE LOGS
+                </h4>
+                <button 
+                  onClick={() => setMonitorLogs([])}
+                  className="text-[9px] font-black text-zinc-500 hover:text-red-500 uppercase tracking-widest transition-colors"
+                >
+                  Clear Logs
+                </button>
+              </div>
+              
+              <div className="flex-1 bg-zinc-950 border border-zinc-850 rounded-2xl p-4 font-mono text-[10px] leading-relaxed overflow-y-auto space-y-3 shadow-inner">
+                {monitorLogs.map((log) => (
+                  <div key={log.id} className="flex gap-2 items-start">
+                    <span className="text-zinc-600 shrink-0 select-none">[{log.time}]</span>
+                    <span className={
+                      log.type === 'success' ? 'text-emerald-400 font-bold' :
+                      log.type === 'warn' ? 'text-amber-500 font-bold' :
+                      log.type === 'error' ? 'text-red-500 font-bold' :
+                      'text-sky-400'
+                    }>
+                      {log.message}
+                    </span>
+                  </div>
+                ))}
+                {monitorLogs.length === 0 && (
+                  <p className="text-zinc-700 italic text-center pt-24 font-sans select-none">No transactions recorded yet in current session...</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : activeView === 'bookings' ? (
         <>
       <div className="flex flex-col gap-4 mb-8">
         <div className="flex flex-col md:flex-row gap-4 items-center">
@@ -1032,16 +1343,34 @@ const AdminDashboard = () => {
                 className="input-field pl-12"
               />
             </div>
-            <button 
-              onClick={() => setIsScannerOpen(true)}
-              className="flex items-center gap-3 px-6 py-3 bg-zinc-900 border border-zinc-800 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:border-accent hover:text-accent transition-all whitespace-nowrap"
-            >
-              <Scan size={16} />
-              Scan QR
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setIsScannerOpen(true)}
+                className="flex items-center gap-3 px-6 py-3 bg-zinc-900 border border-zinc-800 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:border-accent hover:text-accent transition-all whitespace-nowrap"
+              >
+                <Scan size={16} />
+                Scan QR
+              </button>
+              
+              <div className={`flex items-center gap-2 px-4 py-3 bg-zinc-900 border ${
+                isCameraActive ? 'border-emerald-500/30 text-emerald-400' : 'border-zinc-800 text-zinc-500'
+              } rounded-2xl transition-all duration-300 select-none shadow-md`}>
+                <span className="relative flex h-2 w-2">
+                  <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                    isCameraActive ? 'animate-ping bg-emerald-400' : 'bg-transparent'
+                  }`}></span>
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                    isCameraActive ? 'bg-emerald-500' : 'bg-zinc-700'
+                  }`}></span>
+                </span>
+                <span className="text-[8px] font-black uppercase tracking-widest leading-none">
+                  {isCameraActive ? 'Camera Active' : 'Standby'}
+                </span>
+              </div>
+            </div>
           </div>
           <div className="flex gap-2 p-1 bg-zinc-900 rounded-2xl border border-zinc-800 overflow-x-auto">
-            {(['all', 'today', 'last7', 'custom'] as const).map((df) => (
+            {(['all', 'today', 'upcoming', 'last7', 'custom'] as const).map((df) => (
               <button
                 key={df}
                 onClick={() => setDateFilter(df)}
@@ -1049,7 +1378,7 @@ const AdminDashboard = () => {
                   dateFilter === df ? 'bg-zinc-800 text-slate-100' : 'hover:bg-zinc-800 border-transparent text-zinc-500'
                 }`}
               >
-                {df === 'last7' ? 'Last 7 Days' : df}
+                {df === 'last7' ? 'Last 7 Days' : df === 'upcoming' ? 'Pre-Bookings' : df}
               </button>
             ))}
           </div>
@@ -1196,6 +1525,11 @@ const AdminDashboard = () => {
                       <div className="flex items-center gap-1.5 px-3 py-1 bg-zinc-800 border border-zinc-700 rounded-full">
                         <IndianRupee size={10} className="text-zinc-500" />
                         <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Unpaid</span>
+                      </div>
+                    )}
+                    {booking.discountType && (
+                      <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/15 border border-emerald-500/30 rounded-full text-emerald-400 font-sans">
+                        <span className="text-[8px] font-black uppercase tracking-widest">🌱 {booking.discountType} (-10%)</span>
                       </div>
                     )}
                   </div>
