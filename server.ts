@@ -44,9 +44,9 @@ async function startServer() {
       return res.status(400).json({ error: "Recipient 'to' is required" });
     }
 
-    if (!resend) {
-      console.warn("RESEND_API_KEY is not set. Email not sent.");
-      return res.status(200).json({ message: "Skipped sending email (no API key)" });
+    if (!resend || !process.env.RESEND_API_KEY || process.env.RESEND_API_KEY.includes("your") || !process.env.RESEND_API_KEY.startsWith("re_")) {
+      console.warn("RESEND_API_KEY is not configured or is a placeholder. Skipping email send.");
+      return res.status(200).json({ message: "Skipped sending email (no valid API key in environment or set to placeholder)", skipped: true });
     }
 
     try {
@@ -66,21 +66,22 @@ async function startServer() {
       });
 
       if (error) {
-        console.error("Resend API Error:", JSON.stringify(error, null, 2));
+        console.warn("Resend API warning/error (gracefully captured):", JSON.stringify(error, null, 2));
         const resendError = error as any;
-        return res.status(400).json({ 
-          error: resendError.message || "Email validation error",
-          name: resendError.name,
-          details: resendError.details || "Check Resend dashboard for domain verification status. If using onboarding@resend.dev, ensure the recipient email is verified in your Resend account."
+        return res.status(200).json({ 
+          message: "Email skipped due to Resend API limits or validation status", 
+          skipped: true,
+          details: resendError.message || "Domain validation parameters"
         });
       }
 
       res.status(200).json({ data });
     } catch (err) {
-      console.error("Critical email failure:", err);
-      res.status(500).json({ 
-        error: "Internal server error", 
-        message: err instanceof Error ? err.message : String(err) 
+      console.warn("Critical email failure bypassed gracefully:", err);
+      res.status(200).json({ 
+        message: "Email skipped due to connection or key authentication status", 
+        skipped: true,
+        details: err instanceof Error ? err.message : String(err) 
       });
     }
   });
@@ -88,8 +89,8 @@ async function startServer() {
   app.post("/api/gemini/tts", async (req, res) => {
     const { text, voice = 'Zephyr' } = req.body;
     
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(200).json({ audio: null, message: "GEMINI_API_KEY not set" });
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY.includes("your") || !process.env.GEMINI_API_KEY.startsWith("AIza")) {
+      return res.status(200).json({ audio: null, message: "GEMINI_API_KEY not set or invalid placeholder" });
     }
 
     try {
@@ -109,8 +110,8 @@ async function startServer() {
       const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       res.json({ audio: base64Audio });
     } catch (error) {
-      console.error("TTS Error:", error);
-      res.status(500).json({ error: "Failed to generate speech" });
+      console.warn("TTS API fallback triggered (quota limit):", error instanceof Error ? error.message : String(error));
+      res.status(200).json({ audio: null, message: "Failed to generate speech via cloud. Falling back to browser Speech API." });
     }
   });
 

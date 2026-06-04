@@ -7,6 +7,29 @@
   --color-accent: #f59e0b;  /* amber-500 */
   --color-surface: #18181b; /* zinc-900 */
   --color-border: #27272a;  /* zinc-800 */
+
+  /* Neon QR animations */
+  --animate-neon-rotate: neon-rotate 5s linear infinite;
+  --animate-neon-pulse: neon-pulse-scan 2.5s ease-in-out infinite;
+  --animate-neon-pulse-red: neon-pulse-error 2s ease-in-out infinite;
+  --animate-neon-pulse-amber: neon-pulse-warning 2s ease-in-out infinite;
+
+  @keyframes neon-rotate {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  @keyframes neon-pulse-scan {
+    0%, 100% { box-shadow: 0 0 12px rgba(245, 158, 11, 0.4); }
+    50% { box-shadow: 0 0 32px rgba(245, 158, 11, 0.75); }
+  }
+  @keyframes neon-pulse-error {
+    0%, 100% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.4); }
+    50% { box-shadow: 0 0 32px rgba(239, 68, 68, 0.75); }
+  }
+  @keyframes neon-pulse-warning {
+    0%, 100% { box-shadow: 0 0 12px rgba(217, 119, 6, 0.4); }
+    50% { box-shadow: 0 0 32px rgba(217, 119, 6, 0.75); }
+  }
 }
 
 @layer base {
@@ -62,3 +85,130 @@
 #qr-reader video {
   @apply rounded-xl;
 }
+
+/* ---------------------------------------------------- */
+/* --- ELITE ACCESSIBLE LIGHT MODE OVERRIDES --- */
+/* ---------------------------------------------------- */
+html.light,
+html.light body,
+html.light main,
+html.light .bg-primary {
+  background-color: #f4f4f5 !important; /* Elegant slate zinc-100 fallback */
+  color: #09090b !important; /* Perfect contrast dark text */
+}
+
+/* 1. Surfaces & Elevated Cards */
+html.light .bg-surface,
+html.light .bg-zinc-900,
+html.light .bento-card,
+html.light [class*="bg-zinc-900"] {
+  background-color: #ffffff !important;
+  border-color: #e4e4e7 !important; /* Elegant zinc-200 boundary */
+  color: #18181b !important;
+}
+
+/* 2. Deep Sub-panels & Inputs */
+html.light .bg-zinc-950,
+html.light [class*="bg-zinc-950"] {
+  background-color: #fcfcfd !important; /* Soft white shade */
+  color: #09090b !important;
+}
+
+html.light .border-zinc-800,
+html.light .border-zinc-800\/50,
+html.light .border-zinc-800\/60,
+html.light .border-border,
+html.light .border-zinc-700,
+html.light [class*="border-zinc-800"] {
+  border-color: #e4e4e7 !important;
+}
+
+/* 3. Glassmorphism navigation panel */
+html.light .glass-card {
+  background-color: rgba(255, 255, 255, 0.8) !important;
+  backdrop-filter: blur(12px) !important;
+  border-color: #e4e4e7 !important;
+  box-shadow: 0 4px 20px -2px rgba(0,0,0,0.05) !important;
+}
+
+/* 4. Controls, Fields and Select lists */
+html.light .input-field,
+html.light select,
+html.light textarea,
+html.light input[type="text"],
+html.light input[type="tel"],
+html.light input[type="date"],
+html.light input[type="time"] {
+  background-color: #ffffff !important;
+  border-color: #d4d4d8 !important; /* Solid zinc-300 contrast */
+  color: #09090b !important;
+}
+
+html.light .input-field::placeholder {
+  color: #71717a !important; /* Clearly readable placeholder */
+}
+
+html.light .input-field:focus,
+html.light select:focus {
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.1) !important;
+}
+
+/* 5. Accessibly Toned Text Overrides */
+html.light .text-slate-100,
+html.light .text-slate-200,
+html.light .text-slate-300,
+html.light .text-white,
+html.light .text-zinc-100,
+html.light .text-zinc-150,
+html.light h1,
+html.light h2,
+html.light h3,
+html.light h4,
+html.light h5,
+html.light h6 {
+  color: #09090b !important;
+}
+
+html.light p,
+html.light .text-zinc-400 {
+  color: #3f3f46 !important; /* Zinc-700 / Accessible Dark Gray */
+}
+
+html.light .text-zinc-500,
+html.light .text-slate-400 {
+  color: #52525b !important; /* Zinc-600 */
+}
+
+html.light .text-zinc-600 {
+  color: #71717a !important; /* Zinc-500 */
+}
+
+/* 6. Specific exceptions or controls */
+html.light .btn-secondary {
+  background-color: #ffffff !important;
+  border-color: #e4e4e7 !important;
+  color: #1f2937 !important;
+}
+
+html.light .btn-secondary:hover {
+  background-color: #f4f4f5 !important;
+}
+
+/* Elegant shadow enhancements on cards */
+html.light .bento-card,
+html.light [class*="bg-zinc-900"].rounded- {
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Keep QR Reader scanner overlay background dark for solid scans */
+html.light #qr-reader {
+  background-color: #18181b !important;
+}
+
+html.light #qr-reader select {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  border-color: #3f3f46 !important;
+}
+

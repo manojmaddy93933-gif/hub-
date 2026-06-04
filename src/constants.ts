@@ -1,11 +1,10 @@
-export const CAR_WASH_HOURS = { open: '10:00', close: '19:00' };
-export const AURA_CAFE_HOURS = { open: '09:00', close: '22:00' };
+export const CAR_WASH_HOURS = { open: '04:00', close: '12:00' };
+export const AURA_CAFE_HOURS = { open: '04:00', close: '12:00' };
 export const THEATRE_HOURS = [
-  { open: '10:00', close: '22:00' }
+  { open: '04:00', close: '12:00' }
 ];
 export const BADMINTON_HOURS = [
-  { open: '07:00', close: '11:00' },
-  { open: '16:00', close: '23:00' }
+  { open: '04:00', close: '12:00' }
 ];
 
 export const RATES = {

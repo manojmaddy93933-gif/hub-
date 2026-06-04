@@ -58,7 +58,7 @@ const Home = () => {
       link: '/bookings',
       color: 'text-amber-500',
       bg: 'bg-amber-500/10',
-      timing: '9:00 AM - 10:00 PM'
+      timing: '4:00 AM - 12:00 PM'
     },
     {
       id: 'theatre',
@@ -69,7 +69,7 @@ const Home = () => {
       link: '/bookings',
       color: 'text-rose-500',
       bg: 'bg-rose-500/10',
-      timing: '10:00 AM - 10:00 PM'
+      timing: '4:00 AM - 12:00 PM'
     },
     {
       id: 'games',
@@ -80,7 +80,7 @@ const Home = () => {
       link: '/bookings',
       color: 'text-blue-500',
       bg: 'bg-blue-500/10',
-      timing: '8:30 AM - 11:00 PM'
+      timing: '4:00 AM - 12:00 PM'
     },
     {
       id: 'carwash',
@@ -91,7 +91,7 @@ const Home = () => {
       link: '/bookings',
       color: 'text-green-500',
       bg: 'bg-green-500/10',
-      timing: '10:00 AM - 7:00 PM'
+      timing: '4:00 AM - 12:00 PM'
     },
     {
       id: 'badminton',
@@ -102,7 +102,7 @@ const Home = () => {
       link: '/bookings',
       color: 'text-indigo-500',
       bg: 'bg-indigo-500/10',
-      timing: '7AM-11AM & 4PM-11PM'
+      timing: '4:00 AM - 12:00 PM'
     }
   ];
 

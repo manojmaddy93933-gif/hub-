@@ -44,7 +44,7 @@ const Bookings = () => {
 
   // Form states
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [startTime, setStartTime] = useState('10:00');
+  const [startTime, setStartTime] = useState('04:00');
   const [resourceId, setResourceId] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [vehicleMake, setVehicleMake] = useState('');
@@ -67,7 +67,7 @@ const Bookings = () => {
     setDiscountType('');
     setPolicyAccepted(false);
     setDate(new Date().toISOString().split('T')[0]);
-    setStartTime('10:00');
+    setStartTime('04:00');
   };
 
   const generateTimeSlots = (open: string, close: string) => {
@@ -83,6 +83,15 @@ const Bookings = () => {
 
   const isFirstLoad = React.useRef(true);
 
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRefreshTrigger(prev => prev + 1);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     if (user) {
       const unsubscribe = bookingService.subscribeToUserBookings(user.uid, (data) => {
@@ -90,7 +99,7 @@ const Bookings = () => {
       });
       return () => unsubscribe();
     }
-  }, [user]);
+  }, [user, refreshTrigger]);
 
   useEffect(() => {
     const pending = myBookings.find(b => b.type === activeTab && b.status === 'pending');
@@ -150,6 +159,13 @@ const Bookings = () => {
   const handleBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+
+    const bookingHour = parseInt(startTime.split(':')[0]);
+    if (isNaN(bookingHour) || bookingHour < 4 || bookingHour >= 12) {
+      alert('Bookings are strictly allowed from 4:00 AM to 12:00 PM (noon). Please select an eligible time slot.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -415,6 +431,8 @@ const Bookings = () => {
                     <input 
                       type="time" 
                       required
+                      min="04:00"
+                      max="11:59"
                       value={startTime}
                       onChange={(e) => setStartTime(e.target.value)}
                       className="input-field pl-12"
@@ -754,14 +772,69 @@ const Bookings = () => {
             ? ['pending', 'ongoing'].includes(b.status)
             : ['completed', 'cancelled'].includes(b.status)
         ).length === 0 ? (
-          <div className="bg-zinc-900 rounded-[2.5rem] p-12 text-center border border-dashed border-zinc-800">
-            <div className="w-16 h-16 bg-zinc-950 text-zinc-700 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Calendar size={32} />
+          historyTab === 'active' ? (
+            <div className="bg-zinc-900 border border-zinc-800/60 rounded-[2.5rem] p-12 flex flex-col items-center justify-center relative overflow-hidden transition-all hover:border-zinc-750">
+              {/* Subtle background glow */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-sky-500/5 rounded-full blur-3xl pointer-events-none" />
+              
+              {/* Decorative concentric circles */}
+              <div className="relative w-24 h-24 mb-6 flex items-center justify-center">
+                <div className="absolute inset-0 rounded-full border border-dashed border-zinc-800 animate-spin" style={{ animationDuration: '40s' }} />
+                <div className="absolute inset-2 rounded-full border border-zinc-800/80" />
+                <div className="absolute inset-4 rounded-full border border-dashed border-zinc-850 animate-spin" style={{ animationDuration: '20s', animationDirection: 'reverse' }} />
+                <div className="w-12 h-12 bg-zinc-950 border border-zinc-800 rounded-2xl flex items-center justify-center shadow-lg relative z-10 text-sky-400">
+                  <Calendar size={20} className="animate-pulse" />
+                </div>
+                {/* Accent dots */}
+                <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-sky-500/30" />
+                <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-indigo-500/30" />
+              </div>
+              
+              <h3 className="text-sm font-black text-slate-100 uppercase tracking-widest mb-1.5">No Active Sessions</h3>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-wider max-w-xs mx-auto leading-relaxed text-center">
+                You have no pending or ongoing bookings right now. Use the form on the left to schedule a new one.
+              </p>
             </div>
-            <p className="text-zinc-500 font-bold uppercase text-[10px] tracking-widest">
-              {historyTab === 'active' ? 'No active sessions.' : 'No past history.'}
-            </p>
-          </div>
+          ) : (
+            <div className="bg-zinc-900 border border-zinc-800/60 rounded-[2.5rem] p-12 flex flex-col items-center justify-center relative overflow-hidden transition-all hover:border-zinc-750">
+              {/* Subtle background glow */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+              
+              {/* Layered receipt/history silhouette */}
+              <div className="relative w-28 h-24 mb-6 flex items-center justify-center">
+                {/* Back card */}
+                <div className="absolute w-14 h-16 bg-zinc-950/40 border border-zinc-850 rounded-xl transform -rotate-12 translate-x-[-12px] opacity-40" />
+                {/* Forward card */}
+                <div className="absolute w-14 h-16 bg-zinc-950/60 border border-zinc-800 rounded-xl transform rotate-12 translate-x-[12px] opacity-60" />
+                {/* Front main card */}
+                <div className="absolute w-16 h-18 bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl flex flex-col justify-between p-2.5 z-10 transform scale-105">
+                  <div className="flex items-center justify-between border-b border-zinc-900 pb-1.5">
+                    <span className="w-5 h-1 bg-zinc-800 rounded-full" />
+                    <span className="w-2 h-2 rounded-full bg-amber-500/20 flex items-center justify-center">
+                      <span className="w-1 h-1 rounded-full bg-amber-200" />
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="block w-10 h-0.5 bg-zinc-850 rounded-full" />
+                    <span className="block w-8 h-0.5 bg-zinc-850 rounded-full" />
+                    <span className="block w-6 h-0.5 bg-zinc-850 rounded-full" />
+                  </div>
+                  <div className="flex justify-end pt-1 border-t border-zinc-900">
+                    <span className="w-4 h-1 bg-zinc-800 rounded-full" />
+                  </div>
+                </div>
+                {/* Overlay clock icon */}
+                <div className="absolute bottom-1 right-2 w-8 h-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 z-20 shadow-md">
+                  <Clock size={12} className="animate-pulse" />
+                </div>
+              </div>
+              
+              <h3 className="text-sm font-black text-slate-100 uppercase tracking-widest mb-1.5">History Vault Empty</h3>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-wider max-w-xs mx-auto leading-relaxed text-center">
+                You do not have any past completed or cancelled sessions under this account yet.
+              </p>
+            </div>
+          )
         ) : (
           <motion.div layout className="space-y-4">
             <AnimatePresence mode="popLayout">
@@ -772,9 +845,9 @@ const Bookings = () => {
                     : ['completed', 'cancelled'].includes(b.status)
                 )
                 .sort((a, b) => b.createdAt - a.createdAt)
-                .map((booking) => (
+                .map((booking, idx) => (
                 <motion.div 
-                  key={booking.id}
+                  key={booking.id || `mybook-${idx}`}
                   layout
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}

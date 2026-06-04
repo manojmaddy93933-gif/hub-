@@ -45,12 +45,15 @@ import {
   Briefcase,
   Plus,
   AlertTriangle,
+  CameraOff,
   Fingerprint,
   Activity,
   Wifi,
   Volume2,
   VolumeX,
-  Terminal
+  Terminal,
+  Download,
+  Timer
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PaymentQR from '../components/PaymentQR';
@@ -107,6 +110,99 @@ const getServiceTextColor = (type: string) => {
   }
 };
 
+interface SessionCountdownProps {
+  checkedInAt?: number;
+  duration: number; // in hours
+}
+
+const SessionCountdown: React.FC<SessionCountdownProps> = ({ checkedInAt, duration }) => {
+  const [timeLeft, setTimeLeft] = useState<string>('');
+  const [isOvertime, setIsOvertime] = useState<boolean>(false);
+  const [percentRemaining, setPercentRemaining] = useState<number>(100);
+
+  useEffect(() => {
+    if (!checkedInAt) {
+      setTimeLeft('—');
+      return;
+    }
+
+    const durationMs = duration * 60 * 60 * 1000;
+    const targetTime = checkedInAt + durationMs;
+
+    const calculateTime = () => {
+      const now = Date.now();
+      const diff = targetTime - now;
+
+      // Percentage calculation (max 100, min 0)
+      const percent = Math.max(0, Math.min(100, (diff / durationMs) * 100));
+      setPercentRemaining(percent);
+
+      if (diff <= 0) {
+        setIsOvertime(true);
+        const absDiff = Math.abs(diff);
+        const hours = Math.floor(absDiff / (1000 * 60 * 60));
+        const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((absDiff % (1000 * 60)) / 1000);
+        
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        setTimeLeft(`+${hours > 0 ? `${hours}:` : ''}${pad(minutes)}:${pad(seconds)}`);
+      } else {
+        setIsOvertime(false);
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        setTimeLeft(`${hours > 0 ? `${hours}:` : ''}${pad(minutes)}:${pad(seconds)}`);
+      }
+    };
+
+    calculateTime();
+    const interval = setInterval(calculateTime, 1000);
+
+    return () => clearInterval(interval);
+  }, [checkedInAt, duration]);
+
+  if (!checkedInAt) {
+    return (
+      <div className="flex items-center gap-1.5 text-zinc-650 font-mono text-[9px] mt-2">
+        <Timer size={11} />
+        <span>No start timestamp</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full space-y-1 mt-2.5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1 font-black uppercase tracking-widest text-[8px] text-zinc-500">
+          <Timer size={10} className={isOvertime ? "text-red-500 animate-pulse" : "text-sky-400"} />
+          <span className={isOvertime ? "text-red-400" : ""}>{isOvertime ? "Session Overtime" : "Time Left"}</span>
+        </div>
+        <span className={`font-mono text-[10px] font-black tracking-wider leading-none ${isOvertime ? "text-red-500 animate-pulse" : "text-sky-400"}`}>
+          {timeLeft}
+        </span>
+      </div>
+      
+      {/* Premium progress bar progression tracking */}
+      <div className="w-full h-1 bg-zinc-950 rounded-full overflow-hidden border border-zinc-900 flex p-[0.5px]">
+        <div 
+          className={`h-full rounded-full transition-all duration-1000 ease-linear ${
+            isOvertime 
+              ? 'bg-red-500 animate-pulse' 
+              : percentRemaining > 50 
+                ? 'bg-sky-500' 
+                : percentRemaining > 15 
+                  ? 'bg-amber-400' 
+                  : 'bg-orange-500 animate-pulse'
+          }`}
+          style={{ width: `${isOvertime ? 100 : percentRemaining}%` }}
+        />
+      </div>
+    </div>
+  );
+};
+
 const AdminDashboard = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const bookingsRef = React.useRef<Booking[]>([]);
@@ -122,6 +218,9 @@ const AdminDashboard = () => {
   const [showAdminPaymentQR, setShowAdminPaymentQR] = useState<{ amount?: number; bookingId?: string } | boolean>(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState<'blocked' | 'notFound' | null>(null);
+  const [scannedBooking, setScannedBooking] = useState<Booking | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [successAnimationId, setSuccessAnimationId] = useState<string | null>(null);
   const [alertsEnabled, setAlertsEnabled] = useState(() => {
     return localStorage.getItem('system_alerts_enabled') !== 'false';
@@ -181,36 +280,155 @@ const AdminDashboard = () => {
   const [isSubmittingMenu, setIsSubmittingMenu] = useState(false);
 
   useEffect(() => {
+    let scanner: any = null;
+    let isMounted = true;
+
     if (isScannerOpen) {
-      const scanner = new Html5QrcodeScanner(
-        "qr-reader",
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        /* verbose= */ false
-      );
+      const checkAndStartCamera = async () => {
+        try {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+            if (isMounted) setCameraError('notFound');
+            return;
+          }
 
-      const onScanSuccess = (decodedText: string) => {
-        handleScanResult(decodedText);
-        scanner.clear();
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const hasCamera = devices.some(device => device.kind === 'videoinput');
+
+          if (!hasCamera) {
+            if (isMounted) setCameraError('notFound');
+            return;
+          }
+
+          // Test access
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            stream.getTracks().forEach(track => track.stop());
+            if (isMounted) setCameraError(null);
+          } catch (err: any) {
+            console.log("Camera userMedia error:", err);
+            if (isMounted) {
+              if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError' || err.name === 'SecurityError') {
+                setCameraError('blocked');
+              } else {
+                setCameraError('notFound');
+              }
+            }
+          }
+        } catch (err) {
+          if (isMounted) setCameraError('blocked');
+        }
+
+        try {
+          scanner = new Html5QrcodeScanner(
+            "qr-reader",
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            /* verbose= */ false
+          );
+
+          const onScanSuccess = (decodedText: string) => {
+            handleScanResult(decodedText);
+            scanner.clear();
+          };
+
+          const onScanFailure = (error: any) => {
+            // quiet fail
+          };
+
+          scanner.render(onScanSuccess, onScanFailure);
+          if (isMounted) setIsCameraActive(true);
+        } catch (err) {
+          console.error("Scanner render fail:", err);
+          if (isMounted) setCameraError('blocked');
+        }
       };
 
-      const onScanFailure = (error: any) => {
-        // quiet fail
-      };
-
-      scanner.render(onScanSuccess, onScanFailure);
-      setIsCameraActive(true);
+      checkAndStartCamera();
 
       return () => {
+        isMounted = false;
         setIsCameraActive(false);
-        scanner.clear().catch(err => console.log("Failed to clear scanner", err));
+        setCameraError(null);
+        if (scanner) {
+          scanner.clear().catch(err => console.log("Failed to clear scanner", err));
+        }
       };
     }
   }, [isScannerOpen]);
 
   const handleScanResult = (result: string) => {
     setIsScannerOpen(false);
-    setSearchTerm(result);
+    
+    const scannedId = result.trim();
+    if (!scannedId) return;
+
+    // Look up the booking matching this ID (case-insensitive)
+    const found = bookingsRef.current.find(b => b.id === scannedId || b.id?.toLowerCase() === scannedId.toLowerCase());
+    
+    if (found) {
+      setScannedBooking(found);
+      setScanError(null);
+      
+      if (alertsEnabled) {
+        playVoice(`Ticket identified for ${found.userName}.`, 'Zephyr');
+        try {
+          const successAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/911/911-preview.mp3');
+          successAudio.volume = 0.5;
+          successAudio.play().catch(e => console.log('Audio play failed:', e));
+        } catch (err) {
+          console.error('Audio error:', err);
+        }
+      }
+
+      // Record to Monitor Logs
+      const logId = Math.random().toString(36).substring(2, 9);
+      const nowStr = new Date().toLocaleTimeString();
+      setMonitorLogs(prev => [
+        {
+          id: logId,
+          time: nowStr,
+          message: `🔍 Identified: ${found.userName} (${getServiceDisplayName(found.type)} - ${found.resourceName})`,
+          type: 'success'
+        },
+        ...prev
+      ]);
+    } else {
+      setScannedBooking(null);
+      setScanError(`No ticket or service booking found for: "${scannedId}"`);
+      
+      if (alertsEnabled) {
+        playVoice("Warning. Ticket not found.", 'Kore');
+        try {
+          const errorAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/2569/2569-preview.mp3');
+          errorAudio.volume = 0.5;
+          errorAudio.play().catch(e => console.log('Audio play failed:', e));
+        } catch (err) {
+          console.error('Audio error:', err);
+        }
+      }
+
+      // Record warnings/errors to logs
+      const logId = Math.random().toString(36).substring(2, 9);
+      const nowStr = new Date().toLocaleTimeString();
+      setMonitorLogs(prev => [
+        {
+          id: logId,
+          time: nowStr,
+          message: `⚠️ QR Check Failed. Code: ${scannedId} unknown.`,
+          type: 'error'
+        },
+        ...prev
+      ]);
+    }
   };
+
+  useEffect(() => {
+    if (scannedBooking) {
+      const refreshed = bookings.find(b => b.id === scannedBooking.id);
+      if (refreshed && JSON.stringify(refreshed) !== JSON.stringify(scannedBooking)) {
+        setScannedBooking(refreshed);
+      }
+    }
+  }, [bookings, scannedBooking]);
 
   const isFirstLoad = React.useRef(true);
 
@@ -225,8 +443,8 @@ const AdminDashboard = () => {
       if (isFirstLoad.current) {
         isFirstLoad.current = false;
         setMonitorLogs([
-          { id: 'init', time: timeStr, message: `Synchronized ${data.length} active records from cloud database nodes.`, type: 'success' },
-          { id: 'listening-init', time: timeStr, message: "Real-time sync listeners are now fully active & listening.", type: 'info' }
+          { id: `init-${Date.now()}-${Math.random()}`, time: timeStr, message: `Synchronized ${data.length} active records from cloud database nodes.`, type: 'success' },
+          { id: `listening-${Date.now()}-${Math.random()}`, time: timeStr, message: "Real-time sync listeners are now fully active & listening.", type: 'info' }
         ]);
         return;
       }
@@ -566,6 +784,83 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleExportAttendance = () => {
+    // Define CSV headers
+    const headers = [
+      'Employee Code',
+      'Name',
+      'Role',
+      'Contact',
+      'Date',
+      'Status',
+      'Check In',
+      'Check Out',
+      'Notes'
+    ];
+
+    // Map workers to CSV rows
+    const rows = workers.map(worker => {
+      const record = attendance.find(a => a.workerId === worker.id);
+      
+      // Status formatting
+      let statusText = 'Unmarked';
+      if (record?.status === 'present') statusText = 'Present';
+      else if (record?.status === 'half-day') statusText = 'Half Day';
+      else if (record?.status === 'absent') statusText = 'Absent';
+
+      // Time formatting
+      const formatTime = (ts: number | undefined) => {
+        if (!ts) return 'N/A';
+        try {
+          return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+        } catch (err) {
+          return 'N/A';
+        }
+      };
+
+      const checkInTime = record?.checkIn ? formatTime(record.checkIn) : 'N/A';
+      const checkOutTime = record?.checkOut ? formatTime(record.checkOut) : 'N/A';
+      const notesText = record?.notes ? record.notes.replace(/"/g, '""') : '';
+
+      return [
+        worker.workerCode || 'N/A',
+        worker.name,
+        worker.role,
+        worker.contact || 'N/A',
+        attendanceDate,
+        statusText,
+        checkInTime,
+        checkOutTime,
+        notesText
+      ];
+    });
+
+    // Helper to sanitize cell values to handle quotes, commas, new lines
+    const sanitizeValue = (val: string) => {
+      if (val.includes(',') || val.includes('\n') || val.includes('"')) {
+        return `"${val.replace(/"/g, '""')}"`;
+      }
+      return val;
+    };
+
+    // Construct CSV Content
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => sanitizeValue(cell)).join(','))
+    ].join('\n');
+
+    // Download flow
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Attendance_Report_${attendanceDate}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleDeleteWorker = async (id: string) => {
     if (!window.confirm('Remove this employee from the system? Historical attendance will be preserved.')) return;
     try {
@@ -727,6 +1022,11 @@ const AdminDashboard = () => {
         paymentStatus: extraData?.paymentStatus || 'paid' // Default to paid on completion if not specified
       });
       setTimeout(() => setSuccessAnimationId(null), 1500);
+    } else if (status === 'ongoing') {
+      await bookingService.updateBookingStatus(id, status, {
+        checkedInAt: Date.now(),
+        ...extraData
+      });
     } else {
       await bookingService.updateBookingStatus(id, status, extraData);
     }
@@ -1053,23 +1353,404 @@ const AdminDashboard = () => {
                 </div>
                 <button 
                   onClick={() => setIsScannerOpen(false)}
-                  className="p-3 bg-zinc-800 text-zinc-400 rounded-2xl hover:text-slate-100"
+                  className="p-3 bg-zinc-800 text-zinc-400 rounded-2xl hover:text-slate-100 cursor-pointer"
                 >
                   <XCircle size={20} />
                 </button>
               </div>
 
-              <div id="qr-reader" className="bg-zinc-800 rounded-2xl overflow-hidden border border-zinc-700 min-h-[300px]"></div>
+              <div className={`relative group/scanner overflow-hidden rounded-[20px] p-[3px] bg-zinc-950 transition-all duration-500 ${
+                cameraError === 'blocked'
+                  ? 'animate-neon-pulse-red'
+                  : cameraError === 'notFound'
+                  ? 'animate-neon-pulse-amber'
+                  : 'animate-neon-pulse'
+              }`}>
+                {/* Rotating holographic neon background border */}
+                <div className={`absolute -inset-[150%] rounded-full opacity-70 pointer-events-none transition-all duration-500 animate-neon-rotate ${
+                  cameraError === 'blocked'
+                    ? 'bg-[conic-gradient(from_0deg,transparent_20%,#ef4444_40%,#ef4444_50%,#dc2626_60%,transparent_80%)]'
+                    : cameraError === 'notFound'
+                    ? 'bg-[conic-gradient(from_0deg,transparent_20%,#f59e0b_40%,#f59e0b_50%,#d97706_60%,transparent_80%)]'
+                    : 'bg-[conic-gradient(from_0deg,transparent_20%,#f59e0b_40%,#f59e0b_50%,#d97706_60%,transparent_80%)]'
+                }`} />
+
+                <div className="relative bg-zinc-900 rounded-[17px] overflow-hidden">
+                  <div 
+                    id="qr-reader" 
+                    className="bg-zinc-900 rounded-[17px] overflow-hidden border-0 transition-all duration-300 min-h-[300px]"
+                  ></div>
+
+                  {/* High-tech corner bracket decorative elements over the reader */}
+                  <div className={`absolute top-4 left-4 w-5 h-5 border-t-2 border-l-2 rounded-tl pointer-events-none z-10 transition-colors duration-350 ${
+                    cameraError === 'blocked' ? 'border-red-500' : cameraError === 'notFound' ? 'border-amber-500' : 'border-accent'
+                  }`} />
+                  <div className={`absolute top-4 right-4 w-5 h-5 border-t-2 border-r-2 rounded-tr pointer-events-none z-10 transition-colors duration-350 ${
+                    cameraError === 'blocked' ? 'border-red-500' : cameraError === 'notFound' ? 'border-amber-500' : 'border-accent'
+                  }`} />
+                  <div className={`absolute bottom-4 left-4 w-5 h-5 border-b-2 border-l-2 rounded-bl pointer-events-none z-10 transition-colors duration-350 ${
+                    cameraError === 'blocked' ? 'border-red-500' : cameraError === 'notFound' ? 'border-amber-500' : 'border-accent'
+                  }`} />
+                  <div className={`absolute bottom-4 right-4 w-5 h-5 border-b-2 border-r-2 rounded-br pointer-events-none z-10 transition-colors duration-350 ${
+                    cameraError === 'blocked' ? 'border-red-500' : cameraError === 'notFound' ? 'border-amber-500' : 'border-accent'
+                  }`} />
+
+                  {/* Camera Error Visual Overlay */}
+                  {cameraError && (
+                    <div className="absolute inset-0 bg-zinc-950/95 backdrop-blur-sm rounded-[17px] flex flex-col items-center justify-center p-6 text-center z-20">
+                      <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-4 ${
+                        cameraError === 'blocked' 
+                          ? 'bg-red-550/10 text-red-400 border border-red-500/20' 
+                          : 'bg-amber-550/10 text-amber-400 border border-amber-500/20'
+                      } animate-bounce`} style={{ animationDuration: '3s' }}>
+                        {cameraError === 'blocked' ? <CameraOff size={24} /> : <AlertTriangle size={24} />}
+                      </div>
+                      <h4 className="text-xs font-black uppercase tracking-widest text-slate-150 mb-1.5">
+                        {cameraError === 'blocked' ? 'Camera Access Blocked' : 'Camera Not Found'}
+                      </h4>
+                      <p className="text-[10px] text-zinc-400 max-w-xs leading-relaxed mb-4">
+                        {cameraError === 'blocked' 
+                          ? 'Camera permission has been denied. Please click the camera block icon in your browser URL bar to allow accesses.' 
+                          : 'No video sources detected. Please connect, enable, or select your system camera.'}
+                      </p>
+                      <button 
+                        onClick={() => {
+                          setIsScannerOpen(false);
+                          setTimeout(() => setIsScannerOpen(true), 150);
+                        }}
+                        className="px-4 py-2 bg-gradient-to-r from-zinc-800 to-zinc-850 hover:from-white hover:to-white hover:text-zinc-950 text-slate-100 rounded-xl font-bold text-[9px] uppercase tracking-widest transition-all cursor-pointer border border-zinc-750/30"
+                      >
+                        Reconnect Devices
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
               
-              <div className="mt-8 p-4 bg-zinc-950/50 rounded-2xl border border-zinc-800">
+              <div className={`mt-8 p-4 rounded-2xl border transition-colors duration-300 ${
+                cameraError === 'blocked' 
+                  ? 'bg-red-950/20 border-red-900/40 text-red-400' 
+                  : cameraError === 'notFound'
+                  ? 'bg-amber-950/20 border-amber-900/40 text-amber-400' 
+                  : 'bg-zinc-950/50 border-zinc-800 text-zinc-400'
+              }`}>
                 <div className="flex items-center gap-3">
-                  <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Position QR code within the frame</p>
+                  <span className="relative flex h-2 w-2">
+                    <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping ${
+                      cameraError === 'blocked' 
+                        ? 'bg-red-400' 
+                        : cameraError === 'notFound'
+                        ? 'bg-amber-400' 
+                        : 'bg-accent'
+                    }`}></span>
+                    <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                      cameraError === 'blocked' 
+                        ? 'bg-red-500' 
+                        : cameraError === 'notFound'
+                        ? 'bg-amber-500' 
+                        : 'bg-accent'
+                    }`}></span>
+                  </span>
+                  <p className="text-[10px] font-black uppercase tracking-widest leading-none">
+                    {cameraError === 'blocked' 
+                      ? 'Camera Access: Blocked / Denied' 
+                      : cameraError === 'notFound'
+                      ? 'Camera hardware not found'
+                      : 'Camera Active: Scan QR code'}
+                  </p>
                 </div>
               </div>
             </div>
           </motion.div>
         )}
+
+        {/* Scanned Booking Detail Presentation Dialog */}
+        <AnimatePresence>
+          {scannedBooking && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-zinc-950/95 backdrop-blur-md"
+            >
+              <div className="max-w-lg w-full bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden flex flex-col gap-6">
+                
+                {/* Visual Accent Layer */}
+                <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-emerald-500 via-accent to-emerald-500" />
+                <div className="absolute top-0 right-0 p-4 font-black text-emerald-500/5 select-none pointer-events-none text-7xl font-sans tracking-tighter">
+                  VERIFIED
+                </div>
+
+                {/* Header */}
+                <div className="flex justify-between items-center relative z-10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-2xl flex items-center justify-center animate-bounce" style={{ animationDuration: '3s' }}>
+                      <QrCode size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black text-slate-100 uppercase tracking-tighter italic">TICKET IDENTIFIED</h3>
+                      <p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Incoming Service Ticket Verified</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setScannedBooking(null)}
+                    className="p-3 bg-zinc-800 text-zinc-400 hover:text-slate-100 rounded-2xl cursor-pointer"
+                  >
+                    <XCircle size={18} />
+                  </button>
+                </div>
+
+                {/* Customer Snapshot */}
+                <div className="p-5 bg-zinc-950 rounded-3xl border border-zinc-850 flex items-start gap-4">
+                  <div className="w-12 h-12 bg-zinc-900 border border-zinc-800 text-zinc-300 rounded-2xl flex items-center justify-center font-sans font-black text-lg">
+                    {scannedBooking.userName?.slice(0, 1).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[8px] font-black text-accent uppercase tracking-widest">Customer Details</p>
+                    <h4 className="text-sm font-black text-slate-100 mt-0.5 truncate">{scannedBooking.userName}</h4>
+                    <p className="text-[10px] text-zinc-500 font-semibold tracking-wide mt-1 font-mono">
+                      ID: {scannedBooking.id}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <span className={`text-[8px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${
+                      scannedBooking.status === 'pending' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
+                      scannedBooking.status === 'ongoing' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse' :
+                      scannedBooking.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                      'bg-red-500/10 text-red-400 border border-red-500/20'
+                    }`}>
+                      {scannedBooking.status}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Detail Specifications Roster */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-zinc-950/40 border border-zinc-850 rounded-2xl">
+                    <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Service & Resource</p>
+                    <p className="text-xs font-black text-slate-200 mt-1 uppercase tracking-tight flex items-center gap-1.5">
+                      <span className={getServiceTextColor(scannedBooking.type)}>●</span>
+                      {scannedBooking.resourceName}
+                    </p>
+                  </div>
+                  <div className="p-4 bg-zinc-950/40 border border-zinc-850 rounded-2xl">
+                    <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Scheduled Time</p>
+                    <p className="text-xs font-bold text-slate-200 mt-1 uppercase flex items-center gap-1.5">
+                      <Clock size={12} className="text-zinc-500 font-bold" />
+                      {scannedBooking.startTime} ({scannedBooking.duration || 1}h)
+                    </p>
+                  </div>
+                  <div className="p-4 bg-zinc-950/40 border border-zinc-850 rounded-2xl">
+                    <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Scheduled Date</p>
+                    <p className="text-xs font-bold text-slate-200 mt-1 flex items-center gap-1.5">
+                      <CalendarIcon size={12} className="text-zinc-500" />
+                      {scannedBooking.date}
+                    </p>
+                  </div>
+                  <div className="p-4 bg-zinc-950/40 border border-zinc-850 rounded-2xl flex flex-col justify-between">
+                    <div>
+                      <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Total Bill</p>
+                      <p className="text-xs font-black text-emerald-400 mt-1 italic">
+                        ₹{scannedBooking.price}
+                      </p>
+                    </div>
+                    {scannedBooking.discountType && (
+                      <span className="text-[7.5px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded uppercase mt-1 leading-none tracking-tight">
+                        🌱 {scannedBooking.discountType} Discount Rate
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Verification/Note logs */}
+                {scannedBooking.notes && (
+                  <div className="p-4 bg-zinc-950/20 border border-zinc-800/60 rounded-2xl">
+                    <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Ticket Notes & Verifications</p>
+                    <p className="text-[11px] text-zinc-400 leading-relaxed font-semibold mt-1">"{scannedBooking.notes}"</p>
+                  </div>
+                )}
+
+                {/* Payment Status Segment & Action */}
+                <div className="p-4 bg-zinc-950 border border-zinc-850 rounded-3xl flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Payment Condition</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={`w-2 h-2 rounded-full ${scannedBooking.paymentStatus === 'paid' ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+                      <span className="text-xs font-black text-slate-200 uppercase tracking-wide leading-none">
+                        {scannedBooking.paymentStatus || 'unpaid'}
+                      </span>
+                    </div>
+                  </div>
+                  {scannedBooking.paymentStatus !== 'paid' ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setShowAdminPaymentQR({ amount: scannedBooking.price, bookingId: scannedBooking.id! });
+                          setScannedBooking(null);
+                        }}
+                        className="px-3 py-1.5 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 font-bold text-[9px] uppercase tracking-widest rounded-xl transition-all cursor-pointer"
+                      >
+                        Show QR
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await bookingService.updateBookingStatus(scannedBooking.id!, scannedBooking.status, { paymentStatus: 'paid', paymentMethod: 'cash' });
+                          // Logs
+                          const logId = Math.random().toString(36).substring(2, 9);
+                          setMonitorLogs(prev => [
+                            { id: logId, time: new Date().toLocaleTimeString(), message: `💸 Scanned Cash Received: Marked ID ${scannedBooking.id?.slice(-6).toUpperCase()} as Paid.`, type: 'info' },
+                            ...prev
+                          ]);
+                        }}
+                        className="px-3 py-1.5 bg-emerald-500 text-zinc-950 font-black text-[9px] uppercase tracking-widest rounded-xl hover:bg-white transition-all active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20"
+                      >
+                        Paid (Cash)
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 rounded-xl">
+                      ✓ TRANSACTION COMPLETED
+                    </span>
+                  )}
+                </div>
+
+                {/* Main Process Execution Status Controls */}
+                <div className="border-t border-zinc-800/80 pt-5 flex flex-col gap-3">
+                  {scannedBooking.status === 'pending' && (
+                    <button
+                      onClick={async () => {
+                        await bookingService.updateBookingStatus(scannedBooking.id!, 'ongoing', { checkedInAt: Date.now() });
+                        playVoice(`Session started for ${scannedBooking.userName}. Welcome to Hub Station!`, 'Zephyr');
+                        // Logs
+                        const logId = Math.random().toString(36).substring(2, 9);
+                        setMonitorLogs(prev => [
+                          { id: logId, time: new Date().toLocaleTimeString(), message: `🚀 Checked-in: Started session for ${scannedBooking.userName}`, type: 'success' },
+                          ...prev
+                        ]);
+                        setScannedBooking(null);
+                      }}
+                      className="w-full py-4 bg-accent text-zinc-950 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-white transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-accent/20 animate-pulse hover:animate-none"
+                    >
+                      <PlayCircle size={16} />
+                      Check-in & Commence Session
+                    </button>
+                  )}
+
+                  {scannedBooking.status === 'ongoing' && (
+                    <button
+                      onClick={async () => {
+                        await bookingService.updateBookingStatus(scannedBooking.id!, 'completed');
+                        playVoice(`Session completed for ${scannedBooking.userName}. Thank you!`, 'Zephyr');
+                        // Logs
+                        const logId = Math.random().toString(36).substring(2, 9);
+                        setMonitorLogs(prev => [
+                          { id: logId, time: new Date().toLocaleTimeString(), message: `🏁 Released: Completed session for ${scannedBooking.userName}`, type: 'info' },
+                          ...prev
+                        ]);
+                        setScannedBooking(null);
+                      }}
+                      className="w-full py-4 bg-emerald-500 text-zinc-950 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-white transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                    >
+                      <CheckCircle2 size={16} />
+                      Finish & Release Slot
+                    </button>
+                  )}
+
+                  {scannedBooking.status === 'completed' && (
+                    <div className="text-center p-3 bg-zinc-950/50 border border-zinc-800/50 rounded-2xl text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                      ✓ This session has already been completed & released.
+                    </div>
+                  )}
+
+                  {scannedBooking.status === 'cancelled' && (
+                    <div className="text-center p-3 bg-red-950/10 border border-red-900/20 rounded-2xl text-[10px] font-bold text-red-500 uppercase tracking-widest">
+                      ⚠️ This ticket was cancelled.
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3 mt-1">
+                    <button
+                      onClick={() => {
+                        setScannedBooking(null);
+                        setIsScannerOpen(true);
+                      }}
+                      className="py-3 bg-zinc-850 hover:bg-zinc-800 text-slate-100 font-bold text-[9px] uppercase tracking-widest rounded-xl transition-all cursor-pointer text-center"
+                    >
+                      Scan Another
+                    </button>
+                    <button
+                      onClick={() => setScannedBooking(null)}
+                      className="py-3 bg-zinc-950 hover:bg-zinc-900 text-zinc-400 hover:text-slate-200 font-bold text-[9px] uppercase tracking-widest rounded-xl transition-all cursor-pointer text-center"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Scan Error presentation dialog */}
+        <AnimatePresence>
+          {scanError && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-zinc-950/90 backdrop-blur-md"
+            >
+              <div className="max-w-md w-full bg-zinc-900 border border-red-500/30 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden flex flex-col gap-6">
+                
+                {/* Visual Accent Layer */}
+                <div className="absolute top-0 left-0 w-full h-1 bg-red-500" />
+
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-red-500/10 text-red-00 border border-red-500/20 rounded-2xl flex items-center justify-center">
+                      <ShieldAlert size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-100 uppercase tracking-tighter italic">SCAN FAILED</h3>
+                      <p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Code Verification Warning</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setScanError(null)}
+                    className="p-3 bg-zinc-800 text-zinc-400 hover:text-slate-100 rounded-2xl cursor-pointer"
+                  >
+                    <XCircle size={18} />
+                  </button>
+                </div>
+
+                <div className="p-5 bg-zinc-950 rounded-2xl border border-zinc-850 text-center">
+                  <p className="text-xs text-zinc-400 leading-relaxed font-semibold">
+                    {scanError}
+                  </p>
+                </div>
+
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => {
+                      setScanError(null);
+                      setIsScannerOpen(true);
+                    }}
+                    className="flex-1 py-3 bg-red-500 text-zinc-950 font-black text-[9px] uppercase tracking-widest rounded-xl hover:bg-white transition-all active:scale-95 cursor-pointer shadow-md shadow-red-500/20 text-center"
+                  >
+                    Scan Again
+                  </button>
+                  <button
+                    onClick={() => setScanError(null)}
+                    className="flex-1 py-3 bg-zinc-850 hover:bg-zinc-800 text-zinc-300 font-bold text-[9px] uppercase tracking-widest rounded-xl transition-all cursor-pointer text-center"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </AnimatePresence>
 
       {activeView === 'monitor' ? (
@@ -1097,8 +1778,16 @@ const AdminDashboard = () => {
 
               <div className="flex items-center gap-4">
                 <button 
+                  onClick={() => setIsScannerOpen(true)}
+                  className="flex items-center gap-2.5 px-5 py-2.5 rounded-xl border border-accent/30 bg-accent/10 hover:bg-accent hover:text-zinc-950 text-[10px] font-black uppercase tracking-widest text-accent transition-all shadow-md cursor-pointer group"
+                  id="scan-ticket-monitor-btn"
+                >
+                  <Scan size={14} className="animate-pulse group-hover:transform group-hover:scale-110 transition-transform" />
+                  Scan Ticket QR
+                </button>
+                <button 
                   onClick={() => playVoice("Attention. Real-time voice diagnostic test executed successfully.", 'Zephyr')}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-800 hover:bg-zinc-800 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-slate-100 transition-all shadow-inner"
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-800 hover:bg-zinc-800 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-slate-100 transition-all shadow-inner cursor-pointer"
                   id="test-voice-btn"
                 >
                   <Volume2 size={14} />
@@ -1144,8 +1833,8 @@ const AdminDashboard = () => {
                 </h4>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {bookings.filter(b => b.status === 'ongoing').map(booking => (
-                  <div key={booking.id} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between h-44 hover:border-accent/40 transition-colors">
+                {bookings.filter(b => b.status === 'ongoing').map((booking, idx) => (
+                  <div key={booking.id || `ongoing-${idx}`} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between min-h-[12.5rem] h-auto hover:border-accent/40 transition-colors">
                     <div className="absolute top-0 right-0 p-4">
                       <span className="text-[8px] font-black uppercase tracking-widest bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2.5 py-1 rounded-full flex items-center gap-1.5">
                         <span className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />
@@ -1156,15 +1845,18 @@ const AdminDashboard = () => {
                       <p className="text-xs font-black text-slate-100 uppercase tracking-tight truncate pr-16">{booking.userName}</p>
                       <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mt-0.5">{booking.resourceName}</p>
                       <p className="text-[8px] font-mono text-zinc-600 uppercase mt-1">ID: {booking.id?.substring(0, 8)}</p>
+                      
+                      {/* Premium Countdown and Progression Display */}
+                      <SessionCountdown checkedInAt={booking.checkedInAt || booking.createdAt} duration={booking.duration || 1} />
                     </div>
-                    <div className="pt-4 border-t border-zinc-950 flex items-center justify-between gap-2">
+                    <div className="pt-4 border-t border-zinc-950 flex items-center justify-between gap-2 mt-4">
                       <div className="flex items-center gap-1.5 text-emerald-500">
                         <Clock size={12} className="animate-spin" style={{ animationDuration: '4s' }} />
                         <span className="text-[10px] font-mono font-black uppercase">Active Slot</span>
                       </div>
                       <button
                         onClick={() => handleStatusUpdate(booking.id!, 'completed')}
-                        className="px-4 py-2 bg-emerald-500 text-zinc-950 font-black text-[9px] uppercase tracking-wider rounded-xl transition-all hover:bg-white active:scale-95"
+                        className="px-4 py-2 bg-emerald-500 text-zinc-950 font-black text-[9px] uppercase tracking-wider rounded-xl transition-all hover:bg-white active:scale-95 cursor-pointer"
                       >
                         Finish & Release
                       </button>
@@ -1189,8 +1881,8 @@ const AdminDashboard = () => {
                 </h4>
               </div>
               <div className="space-y-3">
-                {bookings.filter(b => b.status === 'pending').slice(0, 8).map(booking => (
-                  <div key={booking.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-zinc-700 transition-colors">
+                {bookings.filter(b => b.status === 'pending').slice(0, 8).map((booking, idx) => (
+                  <div key={booking.id || `pending-${idx}`} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-zinc-700 transition-colors">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-400">
                         {getServiceIcon(booking.type, 20)}
@@ -1299,19 +1991,28 @@ const AdminDashboard = () => {
               </div>
               
               <div className="flex-1 bg-zinc-950 border border-zinc-850 rounded-2xl p-4 font-mono text-[10px] leading-relaxed overflow-y-auto space-y-3 shadow-inner">
-                {monitorLogs.map((log) => (
-                  <div key={log.id} className="flex gap-2 items-start">
-                    <span className="text-zinc-600 shrink-0 select-none">[{log.time}]</span>
-                    <span className={
-                      log.type === 'success' ? 'text-emerald-400 font-bold' :
-                      log.type === 'warn' ? 'text-amber-500 font-bold' :
-                      log.type === 'error' ? 'text-red-500 font-bold' :
-                      'text-sky-400'
-                    }>
-                      {log.message}
-                    </span>
-                  </div>
-                ))}
+                <AnimatePresence initial={false}>
+                  {monitorLogs.map((log) => (
+                    <motion.div
+                      key={log.id}
+                      initial={{ opacity: 0, x: 24 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -16 }}
+                      transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+                      className="flex gap-2 items-start"
+                    >
+                      <span className="text-zinc-600 shrink-0 select-none">[{log.time}]</span>
+                      <span className={
+                        log.type === 'success' ? 'text-emerald-400 font-bold' :
+                        log.type === 'warn' ? 'text-amber-500 font-bold' :
+                        log.type === 'error' ? 'text-red-500 font-bold' :
+                        'text-sky-400'
+                      }>
+                        {log.message}
+                      </span>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
                 {monitorLogs.length === 0 && (
                   <p className="text-zinc-700 italic text-center pt-24 font-sans select-none">No transactions recorded yet in current session...</p>
                 )}
@@ -1449,9 +2150,9 @@ const AdminDashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 gap-4">
-        {filteredBookings.map((booking) => (
+        {filteredBookings.map((booking, idx) => (
           <motion.div 
-            key={booking.id}
+            key={booking.id || `filtered-${idx}`}
             layout
             className={`bg-zinc-900 rounded-[2.5rem] p-8 border transition-all shadow-sm relative overflow-hidden ${
               selectedBookings.includes(booking.id!) ? 'border-accent ring-1 ring-accent/30' : 'border-zinc-800'
@@ -1972,8 +2673,8 @@ const AdminDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {bookings.filter(b => b.paymentStatus === 'paid').map((b) => (
-                  <tr key={b.id} className="border-b border-zinc-800/50 group hover:bg-zinc-800/20 transition-colors">
+                {bookings.filter(b => b.paymentStatus === 'paid').map((b, idx) => (
+                  <tr key={b.id || `paid-${idx}`} className="border-b border-zinc-800/50 group hover:bg-zinc-800/20 transition-colors">
                     <td className="py-4 text-sm font-bold text-slate-300">{b.date}</td>
                     <td className="py-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">{b.id}</td>
                     <td className="py-4">
@@ -2028,6 +2729,14 @@ const AdminDashboard = () => {
                 onChange={(e) => setAttendanceDate(e.target.value)}
                 className="input-field max-w-[200px]"
               />
+              <button 
+                onClick={handleExportAttendance}
+                className="flex items-center gap-3 px-6 py-3 bg-zinc-950 border border-zinc-800 text-zinc-400 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:border-accent hover:text-accent transition-all cursor-pointer"
+                title={`Export ${attendanceDate} Attendance as CSV`}
+              >
+                <Download size={16} />
+                Export Attendance
+              </button>
               <a 
                 href="/attendance"
                 target="_blank"
@@ -2167,8 +2876,8 @@ const AdminDashboard = () => {
                         }}
                        >
                          <option value="">Choose coworker...</option>
-                         {workers.map(w => (
-                           <option key={w.id} value={w.id}>{w.name} ({w.role})</option>
+                         {workers.map((w, idx) => (
+                           <option key={w.id || `worker-opt-${idx}`} value={w.id}>{w.name} ({w.role})</option>
                          ))}
                        </select>
                        <ChevronDown className="absolute right-4 top-3.5 text-zinc-500 pointer-events-none" size={18} />
@@ -2237,10 +2946,10 @@ const AdminDashboard = () => {
                       <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest">No employees registered yet.</p>
                     </div>
                   )}
-                  {workers.map((worker) => {
+                  {workers.map((worker, idx) => {
                     const record = attendance.find(a => a.workerId === worker.id);
                     return (
-                      <div key={worker.id} className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-6 hover:border-accent/30 transition-all group">
+                      <div key={worker.id || `worker-${idx}`} className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-6 hover:border-accent/30 transition-all group">
                         <div className="flex flex-wrap items-center justify-between gap-6">
                           <div className="flex items-center gap-6">
                             <div className="w-14 h-14 bg-zinc-950 rounded-2xl flex items-center justify-center text-zinc-700 group-hover:text-accent group-hover:bg-accent/10 transition-colors">
@@ -2328,9 +3037,9 @@ const AdminDashboard = () => {
                       <p className="text-[10px] font-black text-zinc-700 uppercase tracking-widest italic">Use 'Assign Shift' to plan the roster.</p>
                     </div>
                   )}
-                  {schedules.map((schedule) => (
+                  {schedules.map((schedule, idx) => (
                     <motion.div 
-                      key={schedule.id}
+                      key={schedule.id || `schedule-${schedule.workerId}-${idx}`}
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-6 hover:border-blue-500/30 transition-all group"

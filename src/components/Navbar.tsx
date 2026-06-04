@@ -2,13 +2,31 @@ import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { signInWithGoogle, logout } from '../services/firebase';
-import { Car, Gamepad2, Settings, User as UserIcon, LogOut } from 'lucide-react';
+import { Car, Gamepad2, Settings, User as UserIcon, LogOut, Sun, Moon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const Navbar = () => {
   const { user, profile, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [isProfileOpen, setIsProfileOpen] = React.useState(false);
+
+  // Theme logic state
+  const [theme, setTheme] = React.useState(() => {
+    return localStorage.getItem('theme') || 'dark';
+  });
+
+  React.useEffect(() => {
+    if (theme === 'light') {
+      document.documentElement.classList.add('light');
+    } else {
+      document.documentElement.classList.remove('light');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
 
   return (
     <motion.nav 
@@ -32,6 +50,40 @@ const Navbar = () => {
         </div>
 
         <div className="flex items-center gap-4">
+          {/* Light/Dark Mode Toggle Button */}
+          <button
+            onClick={toggleTheme}
+            className="p-2.5 bg-zinc-950/40 hover:bg-zinc-900 border border-border text-slate-100 rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center relative group overflow-hidden"
+            title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            id="theme-toggle-btn"
+          >
+            <div className="relative w-4 h-4 flex items-center justify-center">
+              <AnimatePresence mode="wait">
+                {theme === 'light' ? (
+                  <motion.div
+                    key="light-icon"
+                    initial={{ scale: 0.5, rotate: -45, opacity: 0 }}
+                    animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                    exit={{ scale: 0.5, rotate: 45, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Moon size={16} className="text-amber-500" />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="dark-icon"
+                    initial={{ scale: 0.5, rotate: 45, opacity: 0 }}
+                    animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                    exit={{ scale: 0.5, rotate: -45, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Sun size={16} className="text-amber-500" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </button>
+
           {user ? (
             <div className="relative">
               <button 
