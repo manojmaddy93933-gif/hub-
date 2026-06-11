@@ -1,7 +1,7 @@
-export const CAR_WASH_HOURS = { open: '04:00', close: '12:00' };
-export const AURA_CAFE_HOURS = { open: '04:00', close: '12:00' };
+export const CAR_WASH_HOURS = { open: '09:30', close: '19:30' };
+export const AURA_CAFE_HOURS = { open: '10:00', close: '22:00' };
 export const THEATRE_HOURS = [
-  { open: '04:00', close: '12:00' }
+  { open: '10:00', close: '23:00' }
 ];
 export const BADMINTON_HOURS = [
   { open: '04:00', close: '12:00' }
@@ -15,6 +15,8 @@ export const RATES = {
     FREE: { name: 'Free Table', tables: 3, rate: 0 }
   },
   CAR_WASH: [
+    { type: 'Hatchback / Sedan Wash', price: 500 },
+    { type: 'SUV / MPV Wash', price: 600 },
     { type: 'Quick Wash', price: 500 },
     { type: 'Premium Wash', price: 1200 },
     { type: 'Deep Clean Service', price: 2200 }

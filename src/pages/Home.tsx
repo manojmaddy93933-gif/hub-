@@ -58,7 +58,7 @@ const Home = () => {
       link: '/bookings',
       color: 'text-amber-500',
       bg: 'bg-amber-500/10',
-      timing: '4:00 AM - 12:00 PM'
+      timing: '10:00 AM - 10:00 PM'
     },
     {
       id: 'theatre',
@@ -69,7 +69,7 @@ const Home = () => {
       link: '/bookings',
       color: 'text-rose-500',
       bg: 'bg-rose-500/10',
-      timing: '4:00 AM - 12:00 PM'
+      timing: '10:00 AM - 11:00 PM'
     },
     {
       id: 'games',
@@ -80,7 +80,7 @@ const Home = () => {
       link: '/bookings',
       color: 'text-blue-500',
       bg: 'bg-blue-500/10',
-      timing: '4:00 AM - 12:00 PM'
+      timing: '10:00 AM - 10:00 PM'
     },
     {
       id: 'carwash',
@@ -91,7 +91,7 @@ const Home = () => {
       link: '/bookings',
       color: 'text-green-500',
       bg: 'bg-green-500/10',
-      timing: '4:00 AM - 12:00 PM'
+      timing: '9:30 AM - 7:30 PM'
     },
     {
       id: 'badminton',
@@ -291,6 +291,8 @@ const Home = () => {
               </p>
               <div className="space-y-6">
                 {[
+                  { label: 'Hatchback / Sedan Wash', price: '₹500' },
+                  { label: 'SUV / MPV Wash', price: '₹600' },
                   { label: 'Basic Wash', price: '₹500' },
                   { label: 'Premium Wash', price: '₹1200' },
                   { label: 'Deep Clean Service', price: '₹2200' },

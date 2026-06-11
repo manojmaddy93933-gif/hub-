@@ -48,12 +48,14 @@ import {
   CameraOff,
   Fingerprint,
   Activity,
+  History,
   Wifi,
   Volume2,
   VolumeX,
   Terminal,
   Download,
-  Timer
+  Timer,
+  HelpCircle
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PaymentQR from '../components/PaymentQR';
@@ -64,6 +66,14 @@ interface Notification {
   message: string;
   type: 'new' | 'update' | 'cancel';
   time: number;
+}
+
+interface RecentScanItem {
+  id: string;
+  time: string;
+  resourceName: string;
+  userName: string;
+  type: string;
 }
 
 const getServiceDisplayName = (type: string) => {
@@ -219,6 +229,7 @@ const AdminDashboard = () => {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<'blocked' | 'notFound' | null>(null);
+  const [showScannerHelp, setShowScannerHelp] = useState(false);
   const [scannedBooking, setScannedBooking] = useState<Booking | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [successAnimationId, setSuccessAnimationId] = useState<string | null>(null);
@@ -238,6 +249,7 @@ const AdminDashboard = () => {
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [recentScans, setRecentScans] = useState<RecentScanItem[]>([]);
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'upcoming' | 'last7' | 'custom'>('all');
   const [customRange, setCustomRange] = useState({ start: '', end: '' });
   const [activeView, setActiveView] = useState<'bookings' | 'payments' | 'calendar' | 'workers' | 'cafeMenu' | 'monitor'>('monitor');
@@ -368,16 +380,30 @@ const AdminDashboard = () => {
       setScannedBooking(found);
       setScanError(null);
       
+      try {
+        const successAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/911/911-preview.mp3');
+        successAudio.volume = 0.5;
+        successAudio.play().catch(e => console.log('Audio play failed:', e));
+      } catch (err) {
+        console.error('Audio error:', err);
+      }
+      
       if (alertsEnabled) {
         playVoice(`Ticket identified for ${found.userName}.`, 'Zephyr');
-        try {
-          const successAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/911/911-preview.mp3');
-          successAudio.volume = 0.5;
-          successAudio.play().catch(e => console.log('Audio play failed:', e));
-        } catch (err) {
-          console.error('Audio error:', err);
-        }
       }
+
+      // Save to recent scans list (keep last 5)
+      const nowScanTime = new Date().toLocaleTimeString();
+      setRecentScans(prev => [
+        {
+          id: found.id || Math.random().toString(36).substring(2, 9),
+          time: nowScanTime,
+          resourceName: found.resourceName || 'Unknown Resource',
+          userName: found.userName || 'Guest',
+          type: found.type,
+        },
+        ...prev
+      ].slice(0, 5));
 
       // Record to Monitor Logs
       const logId = Math.random().toString(36).substring(2, 9);
@@ -395,15 +421,16 @@ const AdminDashboard = () => {
       setScannedBooking(null);
       setScanError(`No ticket or service booking found for: "${scannedId}"`);
       
+      try {
+        const errorAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/2569/2569-preview.mp3');
+        errorAudio.volume = 0.5;
+        errorAudio.play().catch(e => console.log('Audio play failed:', e));
+      } catch (err) {
+        console.error('Audio error:', err);
+      }
+      
       if (alertsEnabled) {
         playVoice("Warning. Ticket not found.", 'Kore');
-        try {
-          const errorAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/2569/2569-preview.mp3');
-          errorAudio.volume = 0.5;
-          errorAudio.play().catch(e => console.log('Audio play failed:', e));
-        } catch (err) {
-          console.error('Audio error:', err);
-        }
       }
 
       // Record warnings/errors to logs
@@ -429,6 +456,25 @@ const AdminDashboard = () => {
       }
     }
   }, [bookings, scannedBooking]);
+
+  // Auto-dismiss scanner feedback success or error alerts after 3 seconds of being displayed
+  useEffect(() => {
+    if (scannedBooking) {
+      const timer = setTimeout(() => {
+        setScannedBooking(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [scannedBooking]);
+
+  useEffect(() => {
+    if (scanError) {
+      const timer = setTimeout(() => {
+        setScanError(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [scanError]);
 
   const isFirstLoad = React.useRef(true);
 
@@ -1132,7 +1178,7 @@ const AdminDashboard = () => {
               initial={{ opacity: 0, x: 50, scale: 0.9 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9, x: 20 }}
-              className={`p-4 rounded-2xl border pointer-events-auto shadow-2xl backdrop-blur-md flex gap-4 ${
+              className={`p-4 rounded-2xl border pointer-events-auto shadow-2xl backdrop-blur-md flex gap-4 overflow-hidden relative pb-5 ${
                 notif.type === 'new' ? 'bg-blue-500/10 border-blue-500/30' :
                 notif.type === 'cancel' ? 'bg-red-500/10 border-red-500/30' :
                 'bg-amber-500/10 border-amber-500/30'
@@ -1145,17 +1191,31 @@ const AdminDashboard = () => {
               }`}>
                 {notif.type === 'new' ? <BellRing size={20} /> : <Bell size={20} />}
               </div>
-              <div>
+              <div className="flex-grow">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-100 mb-1">{notif.title}</p>
-                <p className="text-xs font-medium text-zinc-400 leading-relaxed">{notif.message}</p>
+                <p className="text-xs font-medium text-zinc-400 leading-relaxed pr-4">{notif.message}</p>
                 <p className="text-[8px] font-black text-zinc-600 uppercase tracking-widest mt-2">Just Now</p>
               </div>
               <button 
                 onClick={() => setNotifications(prev => prev.filter(n => n.id !== notif.id))}
-                className="absolute top-2 right-2 text-zinc-600 hover:text-zinc-400 p-1"
+                className="absolute top-2 right-2 text-zinc-600 hover:text-zinc-400 p-1 pointer-events-auto cursor-pointer z-10"
               >
                 <XCircle size={14} />
               </button>
+
+              {/* Progress Bar of Dismiss Countdown */}
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-950/30 overflow-hidden">
+                <motion.div
+                  initial={{ width: "100%" }}
+                  animate={{ width: "0%" }}
+                  transition={{ duration: 5, ease: "linear" }}
+                  className={`h-full ${
+                    notif.type === 'new' ? 'bg-blue-500' :
+                    notif.type === 'cancel' ? 'bg-red-500' :
+                    'bg-amber-500'
+                  }`}
+                />
+              </div>
             </motion.div>
           ))}
         </AnimatePresence>
@@ -1381,6 +1441,39 @@ const AdminDashboard = () => {
                     className="bg-zinc-900 rounded-[17px] overflow-hidden border-0 transition-all duration-300 min-h-[300px]"
                   ></div>
 
+                  {/* High-tech visual scanning line animation */}
+                  {isScannerOpen && !cameraError && (
+                    <motion.div
+                      initial={{ top: "0%" }}
+                      animate={{ top: "100%" }}
+                      transition={{
+                        repeat: Infinity,
+                        repeatType: "reverse",
+                        duration: 2.8,
+                        ease: "easeInOut"
+                      }}
+                      className="absolute left-0 right-0 h-[3px] bg-gradient-to-r from-transparent via-accent to-transparent shadow-[0_0_15px_rgba(245,158,11,0.95),_0_0_6px_rgba(245,158,11,0.65)] z-20 pointer-events-none"
+                    />
+                  )}
+
+                  {/* Floating help icon / tooltip */}
+                  {!cameraError && (
+                    <div className="absolute top-3.5 right-3.5 z-30 flex items-center gap-2 group/tooltip">
+                      <span className="opacity-0 scale-90 translate-x-2 group-hover/tooltip:opacity-100 group-hover/tooltip:scale-100 group-hover/tooltip:translate-x-0 bg-zinc-950/95 text-amber-500 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border border-zinc-850 transition-all duration-200 pointer-events-none whitespace-nowrap shadow-2xl">
+                        Scan Tips
+                      </span>
+                      <button
+                        onClick={() => setShowScannerHelp(true)}
+                        className="w-10 h-10 rounded-xl bg-zinc-950/80 hover:bg-zinc-950 border border-zinc-800 hover:border-amber-500/50 flex items-center justify-center text-amber-500 hover:text-amber-400 shadow-xl active:scale-90 transition-all cursor-pointer group"
+                        title="Scanning quick guidelines"
+                        id="open-scan-help-btn"
+                        type="button"
+                      >
+                        <HelpCircle size={16} className="animate-pulse" />
+                      </button>
+                    </div>
+                  )}
+
                   {/* High-tech corner bracket decorative elements over the reader */}
                   <div className={`absolute top-4 left-4 w-5 h-5 border-t-2 border-l-2 rounded-tl pointer-events-none z-10 transition-colors duration-350 ${
                     cameraError === 'blocked' ? 'border-red-500' : cameraError === 'notFound' ? 'border-amber-500' : 'border-accent'
@@ -1412,6 +1505,11 @@ const AdminDashboard = () => {
                         {cameraError === 'blocked' 
                           ? 'Camera permission has been denied. Please click the camera block icon in your browser URL bar to allow accesses.' 
                           : 'No video sources detected. Please connect, enable, or select your system camera.'}
+                        {typeof window !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) && (
+                          <span className="block mt-2.5 pt-2 border-t border-zinc-800/60 text-amber-400 font-black uppercase tracking-wider text-[8px] leading-normal">
+                            ⚠️ iOS Notice: Apple security blocks camera inside sandboxed preview iframes. If this persists, please tap "Open in New Tab" at the top of your screen to scan in standalone mode!
+                          </span>
+                        )}
                       </p>
                       <button 
                         onClick={() => {
@@ -1460,9 +1558,186 @@ const AdminDashboard = () => {
                   </p>
                 </div>
               </div>
+
+              {/* Recent Scans Session Live-Feed */}
+              <div className="mt-6 pt-5 border-t border-zinc-850">
+                <div className="flex items-center gap-2 mb-3 px-1">
+                  <History size={13} className="text-accent animate-pulse" />
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                    Recent Scans ({recentScans.length})
+                  </h4>
+                </div>
+
+                {recentScans.length === 0 ? (
+                  <div className="py-4 px-4 bg-zinc-950/40 rounded-2xl border border-zinc-850/40 text-center">
+                    <p className="text-[9px] font-bold text-zinc-650 uppercase tracking-widest leading-normal">
+                      Waiting for successful codes...
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                    {recentScans.map((scan, idx) => (
+                      <div 
+                        key={`${scan.id}-${scan.time}-${idx}`}
+                        className="p-3 bg-zinc-950/60 rounded-xl border border-zinc-850/40 flex items-center justify-between gap-3 hover:bg-zinc-950/80 hover:border-zinc-800 transition-all duration-200"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`p-1.5 rounded-lg flex items-center justify-center shrink-0 ${
+                            scan.type === 'game' ? 'bg-amber-500/10 text-amber-500' :
+                            scan.type === 'carWash' ? 'bg-blue-500/10 text-blue-500' :
+                            scan.type === 'badminton' ? 'bg-emerald-500/10 text-emerald-500' :
+                            scan.type === 'theatre' ? 'bg-purple-500/10 text-purple-500' :
+                            scan.type === 'cafe' ? 'bg-yellow-500/10 text-yellow-500' :
+                            'bg-zinc-500/10 text-zinc-500'
+                          }`}>
+                            {getServiceIcon(scan.type, 11)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-200 leading-tight truncate">
+                              {scan.resourceName}
+                            </p>
+                            <p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest mt-0.5 leading-none truncate">
+                              {scan.userName}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <span className="inline-block py-0.5 px-2 bg-zinc-900 border border-zinc-800 rounded text-[8px] font-black font-mono text-zinc-400 uppercase tracking-widest">
+                            {scan.time}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </motion.div>
         )}
+
+        {/* QR Alignment Quick Guidelines Modal */}
+        <AnimatePresence>
+          {showScannerHelp && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-zinc-950/95 backdrop-blur-md"
+            >
+              <motion.div
+                initial={{ scale: 0.95, y: 15 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.95, y: 15 }}
+                className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden flex flex-col gap-6"
+              >
+                {/* Visual Accent Layer */}
+                <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600" />
+                <div className="absolute top-0 right-0 p-4 font-black text-amber-500/5 select-none pointer-events-none text-7xl font-sans tracking-tighter">
+                  GUIDANCE
+                </div>
+
+                {/* Header */}
+                <div className="flex justify-between items-center relative z-10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-2xl flex items-center justify-center">
+                      <HelpCircle size={20} className="animate-spin" style={{ animationDuration: '6s' }} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-100 uppercase tracking-tighter italic">ALIGNMENT FIELD GUIDE</h3>
+                      <p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Master rapid QR identification</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setShowScannerHelp(false)}
+                    className="p-2.5 bg-zinc-850 rounded-xl text-zinc-400 hover:text-slate-100 transition-colors cursor-pointer flex items-center justify-center"
+                    id="close-scan-help-btn"
+                  >
+                    <XCircle size={18} />
+                  </button>
+                </div>
+
+                {/* Content body / list of tips */}
+                <div className="space-y-4 my-2 relative z-10">
+                  {/* Tip 1 */}
+                  <div className="flex gap-4 p-3 bg-zinc-950/50 rounded-2xl border border-zinc-850">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+                      <Smartphone size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-200 mb-0.5">Keep Screens Parallel</h4>
+                      <p className="text-[9px] text-zinc-400 uppercase tracking-wider leading-relaxed">
+                        Hold the smartphone screen directly parallel to the camera lens rather than angling or tilting it.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Tip 2 */}
+                  <div className="flex gap-4 p-3 bg-zinc-950/50 rounded-2xl border border-zinc-850">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+                      <Scan size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-200 mb-0.5">Use 4-8 Inch Standard Distance</h4>
+                      <p className="text-[9px] text-zinc-400 uppercase tracking-wider leading-relaxed">
+                        Hold the QR code 10-20 cm away. Placing the screen too close prevents camera auto-focus.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Tip 3 */}
+                  <div className="flex gap-4 p-3 bg-zinc-950/50 rounded-2xl border border-zinc-850">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+                      <Info size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-200 mb-0.5">Reduce Glare & Raise brightness</h4>
+                      <p className="text-[9px] text-zinc-400 uppercase tracking-wider leading-relaxed">
+                        Avoid intense overhead light beams casting direct reflections, and ensure the customer's phone display isn't too dim.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Tip 4 */}
+                  <div className="flex gap-4 p-3 bg-zinc-950/50 rounded-2xl border border-zinc-850">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+                      <Activity size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-200 mb-0.5">Hold Steady For Half-Second</h4>
+                      <p className="text-[9px] text-zinc-400 uppercase tracking-wider leading-relaxed">
+                        Minimize shakes or rapid sweeps. Steady holding allows the frame interpreter to snap-recognize the pattern.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Tip 5 for iOS/Safari Iframe constraint */}
+                  {typeof window !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) && (
+                    <div className="flex gap-4 p-3 bg-amber-500/5 rounded-2xl border border-amber-500/20">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0">
+                        <Smartphone size={16} />
+                      </div>
+                      <div>
+                        <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-0.5">iOS Safari notice</h4>
+                        <p className="text-[9px] text-zinc-400 uppercase tracking-wider leading-relaxed">
+                          Apple restricts camera use inside sandboxed preview frames. If the camera stays black or says denied, click <span className="text-amber-400 font-bold">"Open App in New Tab"</span> at the top of your builder tool to run natively.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer action button */}
+                <button
+                  type="button"
+                  onClick={() => setShowScannerHelp(false)}
+                  className="w-full h-12 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-white hover:to-white hover:text-zinc-950 text-slate-100 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer border border-amber-500/30 font-sans"
+                >
+                  Resume Scanning
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Scanned Booking Detail Presentation Dialog */}
         <AnimatePresence>
@@ -1785,14 +2060,6 @@ const AdminDashboard = () => {
                   <Scan size={14} className="animate-pulse group-hover:transform group-hover:scale-110 transition-transform" />
                   Scan Ticket QR
                 </button>
-                <button 
-                  onClick={() => playVoice("Attention. Real-time voice diagnostic test executed successfully.", 'Zephyr')}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-800 hover:bg-zinc-800 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-slate-100 transition-all shadow-inner cursor-pointer"
-                  id="test-voice-btn"
-                >
-                  <Volume2 size={14} />
-                  Test Voice Alerts
-                </button>
                 <div className="text-right">
                   <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Pipeline Sync</p>
                   <p className="text-xs font-mono text-zinc-400 leading-none">{new Date().toLocaleTimeString()}</p>
@@ -1834,7 +2101,7 @@ const AdminDashboard = () => {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {bookings.filter(b => b.status === 'ongoing').map((booking, idx) => (
-                  <div key={booking.id || `ongoing-${idx}`} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between min-h-[12.5rem] h-auto hover:border-accent/40 transition-colors">
+                  <div key={booking.id ? `ongoing-${booking.id}-${idx}` : `ongoing-${idx}`} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between min-h-[12.5rem] h-auto hover:border-accent/40 transition-colors">
                     <div className="absolute top-0 right-0 p-4">
                       <span className="text-[8px] font-black uppercase tracking-widest bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2.5 py-1 rounded-full flex items-center gap-1.5">
                         <span className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />
@@ -1882,7 +2149,7 @@ const AdminDashboard = () => {
               </div>
               <div className="space-y-3">
                 {bookings.filter(b => b.status === 'pending').slice(0, 8).map((booking, idx) => (
-                  <div key={booking.id || `pending-${idx}`} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-zinc-700 transition-colors">
+                  <div key={booking.id ? `pending-${booking.id}-${idx}` : `pending-${idx}`} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-zinc-700 transition-colors">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-400">
                         {getServiceIcon(booking.type, 20)}
@@ -1938,22 +2205,6 @@ const AdminDashboard = () => {
                 Live Status Indicators
               </h4>
               <div className="space-y-4">
-                <button 
-                  onClick={toggleAlerts}
-                  className="w-full text-left p-4 bg-zinc-950 border border-zinc-850 hover:border-zinc-700 rounded-2xl flex items-center justify-between transition-colors focus:outline-none"
-                >
-                  <div>
-                    <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-0.5">Diagnostic Audio</p>
-                    <p className="text-xs font-bold text-slate-100">AI Speech Synthesizer</p>
-                  </div>
-                  <span className={`text-[8px] font-black px-2.5 py-1 rounded-full border transition-all ${
-                    alertsEnabled 
-                      ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500 uppercase tracking-widest' 
-                      : 'border-zinc-800 bg-zinc-900 text-zinc-500 uppercase tracking-widest'
-                  }`}>
-                    {alertsEnabled ? 'ACTIVE' : 'MUTED'}
-                  </span>
-                </button>
                 <div className="p-4 bg-zinc-950 border border-zinc-850 rounded-2xl flex items-center justify-between">
                   <div>
                     <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-0.5">Database Sync</p>
@@ -2152,7 +2403,7 @@ const AdminDashboard = () => {
       <div className="grid grid-cols-1 gap-4">
         {filteredBookings.map((booking, idx) => (
           <motion.div 
-            key={booking.id || `filtered-${idx}`}
+            key={booking.id ? `filtered-${booking.id}-${idx}` : `filtered-${idx}`}
             layout
             className={`bg-zinc-900 rounded-[2.5rem] p-8 border transition-all shadow-sm relative overflow-hidden ${
               selectedBookings.includes(booking.id!) ? 'border-accent ring-1 ring-accent/30' : 'border-zinc-800'
@@ -2613,7 +2864,7 @@ const AdminDashboard = () => {
 
                 days.push(
                   <button
-                    key={d}
+                    key={`day-${dateStr}`}
                     onClick={() => {
                       setDateFilter('custom');
                       setCustomRange({ start: dateStr, end: dateStr });
@@ -2674,7 +2925,7 @@ const AdminDashboard = () => {
               </thead>
               <tbody>
                 {bookings.filter(b => b.paymentStatus === 'paid').map((b, idx) => (
-                  <tr key={b.id || `paid-${idx}`} className="border-b border-zinc-800/50 group hover:bg-zinc-800/20 transition-colors">
+                  <tr key={b.id ? `paid-${b.id}-${idx}` : `paid-${idx}`} className="border-b border-zinc-800/50 group hover:bg-zinc-800/20 transition-colors">
                     <td className="py-4 text-sm font-bold text-slate-300">{b.date}</td>
                     <td className="py-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">{b.id}</td>
                     <td className="py-4">
@@ -2877,7 +3128,7 @@ const AdminDashboard = () => {
                        >
                          <option value="">Choose coworker...</option>
                          {workers.map((w, idx) => (
-                           <option key={w.id || `worker-opt-${idx}`} value={w.id}>{w.name} ({w.role})</option>
+                           <option key={w.id ? `worker-opt-id-${w.id}-${idx}` : `worker-opt-${idx}`} value={w.id}>{w.name} ({w.role})</option>
                          ))}
                        </select>
                        <ChevronDown className="absolute right-4 top-3.5 text-zinc-500 pointer-events-none" size={18} />
@@ -2949,7 +3200,7 @@ const AdminDashboard = () => {
                   {workers.map((worker, idx) => {
                     const record = attendance.find(a => a.workerId === worker.id);
                     return (
-                      <div key={worker.id || `worker-${idx}`} className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-6 hover:border-accent/30 transition-all group">
+                      <div key={worker.id ? `worker-id-${worker.id}-${idx}` : `worker-${idx}`} className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-6 hover:border-accent/30 transition-all group">
                         <div className="flex flex-wrap items-center justify-between gap-6">
                           <div className="flex items-center gap-6">
                             <div className="w-14 h-14 bg-zinc-950 rounded-2xl flex items-center justify-center text-zinc-700 group-hover:text-accent group-hover:bg-accent/10 transition-colors">
@@ -3039,7 +3290,7 @@ const AdminDashboard = () => {
                   )}
                   {schedules.map((schedule, idx) => (
                     <motion.div 
-                      key={schedule.id || `schedule-${schedule.workerId}-${idx}`}
+                      key={schedule.id ? `schedule-id-${schedule.id}-${idx}` : `schedule-${schedule.workerId}-${idx}`}
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-6 hover:border-blue-500/30 transition-all group"
@@ -3269,8 +3520,8 @@ const AdminDashboard = () => {
           </AnimatePresence>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {menuItems.map((item) => (
-              <div key={item.id} className="bg-zinc-950 border border-zinc-800 rounded-[2rem] p-6 hover:border-amber-500/30 transition-all group overflow-hidden">
+            {menuItems.map((item, idx) => (
+              <div key={item.id ? `menu-item-${item.id}-${idx}` : `menu-item-${idx}`} className="bg-zinc-950 border border-zinc-800 rounded-[2rem] p-6 hover:border-amber-500/30 transition-all group overflow-hidden">
                 <div className="flex gap-4 mb-6">
                   <div className="w-20 h-20 bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 flex-shrink-0">
                     {item.imageUrl ? (

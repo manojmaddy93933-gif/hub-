@@ -97,6 +97,21 @@ export const bookingService = {
     });
   },
 
+  subscribeToBadmintonBookings(callback: (bookings: Booking[]) => void) {
+    const path = 'bookings';
+    const q = query(
+      collection(db, path), 
+      where('type', '==', 'badminton')
+    );
+    
+    return onSnapshot(q, (snapshot) => {
+      const bookings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking));
+      callback(bookings);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    });
+  },
+
   subscribeToAllBookings(callback: (bookings: Booking[], changes?: any[]) => void) {
     const path = 'bookings';
     const q = query(collection(db, path), orderBy('createdAt', 'desc'));

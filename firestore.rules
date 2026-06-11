@@ -62,8 +62,8 @@ service cloud.firestore {
                data.startTime is string;
       }
 
-      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
-      allow get: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid || resource.data.type == 'badminton');
+      allow get: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid || resource.data.type == 'badminton');
       
       allow create: if isSignedIn() && isValidBooking(incoming());
       

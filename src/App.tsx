@@ -15,7 +15,7 @@ import Login from './pages/Login';
 import QRHub from './pages/QRHub';
 import StaffAttendance from './pages/StaffAttendance';
 import { bookingService } from './services/bookingService';
-import { playVoice } from './services/voiceService';
+import { notificationService } from './services/notificationService';
 import { Booking } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle2, X } from 'lucide-react';
@@ -24,6 +24,15 @@ function AppContent() {
   const { user, loading, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [completeNotification, setCompleteNotification] = useState<Booking | null>(null);
+
+  useEffect(() => {
+    if (completeNotification) {
+      const timer = setTimeout(() => {
+        setCompleteNotification(null);
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [completeNotification]);
 
   useEffect(() => {
     if (user) {
@@ -37,10 +46,16 @@ function AppContent() {
         if (changes && Array.isArray(changes)) {
           changes.forEach(change => {
             const booking = { id: change.doc.id, ...change.doc.data() } as Booking;
-            if (change.type === 'modified') {
+            if (change.type === 'added') {
+              if (booking.type === 'badminton') {
+                notificationService.sendNotification(
+                  "Badminton Court Confirmed! 🏸",
+                  `Your booking for ${booking.resourceName} on ${booking.date} at ${booking.startTime} is successfully confirmed.`
+                );
+              }
+            } else if (change.type === 'modified') {
               if (booking.status === 'completed') {
                 setCompleteNotification(booking);
-                playVoice(`Dear customer, your scheduled play session for ${booking.resourceName} is now completed. Thank you for booking with us!`, 'Zephyr');
                 try {
                   const doneAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/911/911-preview.mp3');
                   doneAudio.volume = 0.5;
@@ -49,13 +64,24 @@ function AppContent() {
                   console.error('Audio error:', err);
                 }
               } else if (booking.status === 'cancelled') {
-                playVoice("Your order has been cancelled.", 'Kore');
                 try {
                   const cancelAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/2569/2569-preview.mp3');
                   cancelAudio.volume = 0.5;
                   cancelAudio.play().catch(e => console.log('Audio play failed:', e));
                 } catch (err) {
                   console.error('Audio error:', err);
+                }
+              } else if (booking.status === 'ongoing') {
+                if (booking.type === 'carWash') {
+                  notificationService.sendNotification(
+                    "Car Wash Service Started! 🚿",
+                    `Your car wash service for ${booking.vehicleMake ? `${booking.vehicleMake} ${booking.vehicleModel || ''}` : 'your vehicle'} has started in ${booking.resourceName || 'the bay'}!`
+                  );
+                } else if (booking.type === 'badminton') {
+                  notificationService.sendNotification(
+                    "Badminton Court Confirmed & Ready! 🏸",
+                    `Hi ${booking.userName}, your badminton court ${booking.resourceName} is confirmed and your slot starting at ${booking.startTime} is now active!`
+                  );
                 }
               }
             }
@@ -127,7 +153,7 @@ function AppContent() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-3 border-t border-zinc-800/80 pt-3 mt-1 relative z-10">
+              <div className="flex items-center justify-end gap-3 border-t border-zinc-800/80 pt-3 mt-1 relative z-10 pb-2">
                 <button
                   onClick={() => {
                     navigate('/bookings');
@@ -143,6 +169,16 @@ function AppContent() {
                 >
                   Dismiss
                 </button>
+              </div>
+
+              {/* Precise Auto-dismiss progress bar */}
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-900 overflow-hidden">
+                <motion.div
+                  initial={{ width: "100%" }}
+                  animate={{ width: "0%" }}
+                  transition={{ duration: 8, ease: "linear" }}
+                  className="h-full bg-emerald-500"
+                />
               </div>
             </motion.div>
           )}
