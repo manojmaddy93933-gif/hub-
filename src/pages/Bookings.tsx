@@ -60,7 +60,7 @@ const Bookings = () => {
     }
   }, [user]);
 
-  const BADMINTON_SLOTS = ["04:00", "05:00", "06:00", "07:00", "08:00", "09:00", "10:00", "11:00"];
+  const BADMINTON_SLOTS = ["07:00", "08:00", "09:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00"];
 
   const MONTH_NAMES = [
     "January", "February", "March", "April", "May", "June",
@@ -105,7 +105,7 @@ const Bookings = () => {
       occupiedSlotsCount += Math.min(overlapCount, 1);
     });
 
-    if (occupiedSlotsCount >= 8) return 'full';
+    if (occupiedSlotsCount >= BADMINTON_SLOTS.length) return 'full';
     return 'partial';
   };
 
@@ -173,7 +173,7 @@ const Bookings = () => {
     } else if (activeTab === 'cafe' || activeTab === 'theatre') {
       setStartTime('10:00');
     } else if (activeTab === 'badminton') {
-      setStartTime('04:00');
+      setStartTime('07:00');
     } else {
       setStartTime('10:00');
     }
@@ -294,10 +294,15 @@ const Bookings = () => {
         return;
       }
     } else if (activeTab === 'badminton') {
-      const minMin = 4 * 60; // 04:00 AM
-      const maxMin = 12 * 60; // 12:00 PM (noon)
-      if (isNaN(h) || totalMinutes < minMin || totalMinutes > maxMin) {
-        alert('Badminton Court is strictly available from 4:00 AM to 12:00 PM (noon). Please select a valid time.');
+      const dur = resourceId === '2 Hours' ? 2 : 1;
+      const startMinutes = totalMinutes;
+      const endMinutes = startMinutes + dur * 60;
+      
+      const inSession1 = startMinutes >= 7 * 60 && endMinutes <= 10 * 60;
+      const inSession2 = startMinutes >= 16 * 60 && endMinutes <= 23 * 60;
+      
+      if (isNaN(h) || (!inSession1 && !inSession2)) {
+        alert('Badminton Court is strictly available from 7:00 AM to 10:00 AM and 4:00 PM to 11:00 PM. Please select a valid duration and time slot within these session timings.');
         return;
       }
     } else if (activeTab === 'game') {
@@ -576,7 +581,7 @@ const Bookings = () => {
                       {(activeTab === 'theatre' ? THEATRE_HOURS : activeTab === 'cafe' ? [AURA_CAFE_HOURS] : BADMINTON_HOURS).map((range, idx) => (
                         <optgroup key={`${activeTab}-group-${idx}`} label={activeTab === 'cafe' ? 'Available Hours' : `Session ${idx + 1}`}>
                           {generateTimeSlots(range.open, range.close).map(slot => (
-                            <option key={`${activeTab}-slot-${slot}`} value={slot}>
+                            <option key={`${activeTab}-slot-${slot}-${idx}`} value={slot}>
                               {parseInt(slot.split(':')[0]) > 12 
                                 ? `${parseInt(slot.split(':')[0]) - 12}:00 PM` 
                                 : parseInt(slot.split(':')[0]) === 12 
@@ -835,8 +840,6 @@ const Bookings = () => {
                 <span className="text-[10px] font-black uppercase tracking-widest">Cancellation Policy</span>
               </div>
               <ul className="text-[9px] text-zinc-500 space-y-1 mb-4 font-medium uppercase tracking-wider list-disc pl-3">
-                <li>Full refund for cancellations made at least 2 hours before the scheduled time.</li>
-                <li>Cancellations within 2 hours or no-shows are non-refundable.</li>
                 <li>Rescheduling is subject to availability and hub discretion.</li>
               </ul>
               <label className="flex items-center gap-3 cursor-pointer group">
@@ -902,7 +905,7 @@ const Bookings = () => {
                   Badminton Availability Board
                 </h3>
                 <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-1">
-                  View booked slots & Select courts in real-time
+                  Only 1 Court available — View booked slots in real-time
                 </p>
               </div>
               <div className="flex items-center gap-2 bg-zinc-950 p-1.5 rounded-2xl border border-zinc-800">

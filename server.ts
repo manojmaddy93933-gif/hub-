@@ -36,6 +36,11 @@ async function startServer() {
   app.use(express.json());
   app.use(cors());
 
+  // Health check endpoint for control plane
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok" });
+  });
+
   // API routes
   app.post("/api/send-email", async (req, res) => {
     const { to, subject, html } = req.body;
@@ -146,4 +151,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("FATAL ERROR STARTING SERVER:", err);
+  process.exit(1);
+});

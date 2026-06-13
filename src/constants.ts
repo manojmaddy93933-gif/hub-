@@ -4,7 +4,8 @@ export const THEATRE_HOURS = [
   { open: '10:00', close: '23:00' }
 ];
 export const BADMINTON_HOURS = [
-  { open: '04:00', close: '12:00' }
+  { open: '07:00', close: '10:00' },
+  { open: '16:00', close: '23:00' }
 ];
 
 export const RATES = {

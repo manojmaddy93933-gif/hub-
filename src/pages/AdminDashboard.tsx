@@ -4,7 +4,7 @@ import { bookingService } from '../services/bookingService';
 import { attendanceService } from '../services/attendanceService';
 import { cafeService } from '../services/cafeService';
 import { playVoice } from '../services/voiceService';
-import { Booking, BookingStatus, BookingPriority, BookingType, Worker, Attendance, StaffSchedule, CafeMenuItem } from '../types';
+import { Booking, BookingStatus, BookingType, Worker, Attendance, StaffSchedule, CafeMenuItem } from '../types';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { 
   Users, 
@@ -1085,20 +1085,7 @@ const AdminDashboard = () => {
     });
   };
   
-  const handlePriorityUpdate = async (id: string, priority: BookingPriority) => {
-    await bookingService.updateBookingStatus(id, bookings.find(b => b.id === id)?.status || 'pending', { 
-      priority
-    });
-  };
 
-  const getPriorityColor = (priority?: BookingPriority) => {
-    switch (priority) {
-      case 'high': return 'bg-red-500/10 text-red-500 border-red-500/20';
-      case 'medium': return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
-      case 'low': return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
-      default: return 'bg-zinc-800 text-zinc-500 border-zinc-700/50';
-    }
-  };
 
   const handleStartCarWash = async (bookingId: string, bay: string) => {
     await handleStatusUpdate(bookingId, 'ongoing', { 
@@ -2157,13 +2144,6 @@ const AdminDashboard = () => {
                       <div>
                         <div className="flex items-center gap-2">
                           <p className="text-xs font-bold text-slate-100">{booking.userName}</p>
-                          <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
-                            booking.priority === 'high' ? 'bg-red-500/10 text-red-500' :
-                            booking.priority === 'medium' ? 'bg-amber-500/10 text-amber-500' :
-                            'bg-zinc-800 text-zinc-500'
-                          }`}>
-                            {booking.priority}
-                          </span>
                         </div>
                         <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider mt-0.5">
                           {getServiceDisplayName(booking.type)} • {booking.resourceName} • Sch: {booking.startTime}
@@ -2454,12 +2434,7 @@ const AdminDashboard = () => {
                   <p className="text-slate-300 font-black uppercase tracking-tight text-sm mb-2">{booking.resourceName}</p>
                   
                   <div className="flex flex-wrap gap-2 mb-3">
-                    {booking.priority && (
-                      <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border ${getPriorityColor(booking.priority)}`}>
-                        <AlertTriangle size={10} />
-                        <span className="text-[8px] font-black uppercase tracking-widest">{booking.priority}</span>
-                      </div>
-                    )}
+
                     {booking.bay && (
                       <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full">
                         <PlayCircle size={10} className="text-blue-400" />
@@ -2622,39 +2597,6 @@ const AdminDashboard = () => {
                       </div>
                     </div>
                   )}
-                </div>
-              </div>
-
-              {/* Priority Control Card */}
-              <div className="space-y-4">
-                <h5 className="text-[10px] font-black text-zinc-600 uppercase tracking-widest flex items-center gap-2">
-                  <AlertTriangle size={12} />
-                  Urgency Level
-                </h5>
-                <div className="bg-zinc-950/50 rounded-2xl p-4 border border-zinc-800/50">
-                  <div className="flex items-center justify-between mb-4">
-                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-tight">Set Priority</p>
-                    <div className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-widest border ${getPriorityColor(booking.priority)}`}>
-                      {booking.priority || 'Normal'}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['low', 'medium', 'high'] as const).map((p) => (
-                      <button 
-                        key={p}
-                        onClick={() => handlePriorityUpdate(booking.id!, p)}
-                        className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
-                          booking.priority === p 
-                            ? (p === 'high' ? 'bg-red-500 border-red-400 text-white shadow-lg shadow-red-500/20' : p === 'medium' ? 'bg-amber-500 border-amber-400 text-zinc-950 shadow-lg shadow-amber-500/20' : 'bg-emerald-500 border-emerald-400 text-zinc-950 shadow-lg shadow-emerald-500/20')
-                            : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700'
-                        }`}
-                      >
-                        <AlertTriangle size={14} />
-                        <span className="text-[8px] font-black uppercase tracking-widest">{p}</span>
-                      </button>
-                    ))}
-                  </div>
                 </div>
               </div>
 
