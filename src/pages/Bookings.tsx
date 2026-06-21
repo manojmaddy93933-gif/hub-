@@ -28,11 +28,29 @@ import {
   User as UserIcon,
   Trash2,
   X,
-  Bell
+  Bell,
+  Check,
+  Search,
+  SlidersHorizontal
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { RATES, CAR_WASH_HOURS, BADMINTON_HOURS, THEATRE_HOURS, AURA_CAFE_HOURS } from '../constants';
 import PaymentQR from '../components/PaymentQR';
+
+const WASH_PHASES = [
+  { id: 'Queued', label: 'Queued', desc: 'Awaiting bay' },
+  { id: 'In Progress', label: 'Washing', desc: 'In progress' },
+  { id: 'Detailing', label: 'Detailing', desc: 'Finishing' },
+  { id: 'Done', label: 'Completed', desc: 'Ready' }
+];
+
+const getActivePhaseIndex = (booking: Booking) => {
+  if (booking.status === 'cancelled') return -1;
+  if (booking.status === 'completed') return 3;
+  if (booking.status === 'pending') return 0;
+  if (booking.washPhase === 'Detailing') return 2;
+  return 1;
+};
 
 const Bookings = () => {
   const { user, profile } = useAuth();
@@ -40,6 +58,8 @@ const Bookings = () => {
   const [activeTab, setActiveTab] = useState<BookingType>('game');
   const [historyTab, setHistoryTab] = useState<'active' | 'history'>('active');
   const [selectedServiceFilter, setSelectedServiceFilter] = useState<'all' | 'game' | 'carWash' | 'badminton' | 'theatre' | 'cafe'>('all');
+  const [bookingSearchQuery, setBookingSearchQuery] = useState('');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'pending' | 'ongoing' | 'completed' | 'cancelled'>('all');
   const [loading, setLoading] = useState(false);
   const [bookingToCancel, setBookingToCancel] = useState<Booking | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -407,6 +427,33 @@ const Bookings = () => {
     }
   };
 
+  const baseBookingsInTab = myBookings.filter(b => {
+    return historyTab === 'active' 
+      ? ['pending', 'ongoing'].includes(b.status)
+      : ['completed', 'cancelled'].includes(b.status);
+  });
+
+  const filteredBookings = myBookings.filter(b => {
+    const tabMatch = historyTab === 'active' 
+      ? ['pending', 'ongoing'].includes(b.status)
+      : ['completed', 'cancelled'].includes(b.status);
+    
+    const serviceMatch = selectedServiceFilter === 'all' || b.type === selectedServiceFilter;
+    
+    const statusMatch = selectedStatusFilter === 'all' || b.status === selectedStatusFilter;
+
+    const query = bookingSearchQuery.trim().toLowerCase();
+    const searchMatch = !query ? true : (
+      (b.resourceName || '').toLowerCase().includes(query) ||
+      (b.type || '').toLowerCase().includes(query) ||
+      (b.date || '').toLowerCase().includes(query) ||
+      (b.startTime || '').toLowerCase().includes(query) ||
+      (b.status || '').toLowerCase().includes(query)
+    );
+
+    return tabMatch && serviceMatch && statusMatch && searchMatch;
+  });
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-12 grid grid-cols-1 lg:grid-cols-12 gap-8">
       {/* User Profile Header */}
@@ -726,6 +773,7 @@ const Bookings = () => {
                       <AnimatePresence>
                         {vehiclePhotoUrl && (
                           <motion.div 
+                            key="vehiclePhotoPreview"
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95 }}
@@ -1099,7 +1147,7 @@ const Bookings = () => {
         )}
 
         <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold uppercase tracking-tighter text-slate-100">
+          <h2 className="text-2xl font-bold uppercase tracking-tighter text-slate-100 font-black italic">
             {historyTab === 'active' ? 'Active Sessions' : 'Booking History'}
           </h2>
           <div className="flex items-center gap-4">
@@ -1121,7 +1169,10 @@ const Bookings = () => {
             {(['active', 'history'] as const).map((t) => (
               <button
                 key={t}
-                onClick={() => setHistoryTab(t)}
+                onClick={() => {
+                  setHistoryTab(t);
+                  setSelectedStatusFilter('all');
+                }}
                 className={`py-1.5 px-6 rounded-lg font-black text-[9px] uppercase tracking-widest transition-all relative z-10 ${
                   historyTab === t ? 'text-accent font-black' : 'text-zinc-500'
                 }`}
@@ -1136,6 +1187,67 @@ const Bookings = () => {
                 {t}
               </button>
             ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Unified Search and Status Filter panel */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-4 md:p-5 mb-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="relative w-full md:max-w-md flex items-center">
+          <span className="text-zinc-500 absolute left-4">
+            <Search size={14} />
+          </span>
+          <input
+            type="text"
+            placeholder="Search bookings by resource name, date, time..."
+            value={bookingSearchQuery}
+            onChange={(e) => setBookingSearchQuery(e.target.value)}
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl py-2.5 pl-11 pr-10 text-[10px] text-zinc-100 placeholder-zinc-500 font-bold uppercase tracking-wider focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/20 transition-all"
+          />
+          {bookingSearchQuery && (
+            <button
+              onClick={() => setBookingSearchQuery('')}
+              className="text-zinc-500 hover:text-zinc-300 absolute right-4 focus:outline-none cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+          <div className="flex items-center gap-1.5 pl-1 sm:pl-0">
+            <SlidersHorizontal size={12} className="text-zinc-500" />
+            <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Filter Status:</span>
+          </div>
+          <div className="grid grid-cols-5 sm:flex gap-1 bg-zinc-950 p-1 rounded-2xl border border-zinc-800/60 w-full sm:w-auto overflow-hidden">
+            {(['all', 'pending', 'ongoing', 'completed', 'cancelled'] as const).map((statusVal) => {
+              const isSelected = selectedStatusFilter === statusVal;
+              const displayLabel = statusVal === 'all' ? 'All' :
+                                   statusVal === 'pending' ? 'Pending' :
+                                   statusVal === 'ongoing' ? 'Ongoing' :
+                                   statusVal === 'completed' ? 'Completed' : 'Cancelled';
+
+              return (
+                <button
+                  key={statusVal}
+                  onClick={() => {
+                    setSelectedStatusFilter(statusVal);
+                    if (statusVal === 'pending' || statusVal === 'ongoing') {
+                      setHistoryTab('active');
+                    } else if (statusVal === 'completed' || statusVal === 'cancelled') {
+                      setHistoryTab('history');
+                    }
+                  }}
+                  className={`py-1.5 px-2.5 rounded-xl font-black text-[8px] uppercase tracking-wider transition-all relative ${
+                    isSelected 
+                      ? 'text-zinc-950 bg-accent font-extrabold shadow-[0_0_8px_rgba(34,211,238,0.35)]' 
+                      : 'text-zinc-500 hover:text-zinc-300 bg-transparent'
+                  }`}
+                >
+                  {displayLabel}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -1183,13 +1295,7 @@ const Bookings = () => {
           })}
         </div>
 
-        {myBookings.filter(b => {
-          const tabMatch = historyTab === 'active' 
-            ? ['pending', 'ongoing'].includes(b.status)
-            : ['completed', 'cancelled'].includes(b.status);
-          const filterMatch = selectedServiceFilter === 'all' || b.type === selectedServiceFilter;
-          return tabMatch && filterMatch;
-        }).length === 0 ? (
+        {baseBookingsInTab.length === 0 ? (
           historyTab === 'active' ? (
             <div className="bg-zinc-900 border border-zinc-800/60 rounded-[2.5rem] p-12 flex flex-col items-center justify-center relative overflow-hidden transition-all hover:border-zinc-750">
               {/* Subtle background glow */}
@@ -1209,10 +1315,10 @@ const Bookings = () => {
               </div>
               
               <h3 className="text-sm font-black text-slate-100 uppercase tracking-widest mb-1.5">
-                No {selectedServiceFilter !== 'all' ? (selectedServiceFilter === 'carWash' ? 'Car Wash' : selectedServiceFilter) : ''} Active Sessions
+                No Active Sessions
               </h3>
               <p className="text-[10px] text-zinc-500 uppercase tracking-wider max-w-xs mx-auto leading-relaxed text-center">
-                You have no pending or ongoing {selectedServiceFilter !== 'all' ? (selectedServiceFilter === 'carWash' ? 'car wash' : selectedServiceFilter) : ''} bookings right now. Use the form on the left to schedule a new one.
+                You have no pending or ongoing bookings right now. Use the form on the left to schedule a new one.
               </p>
             </div>
           ) : (
@@ -1250,28 +1356,48 @@ const Bookings = () => {
               </div>
               
               <h3 className="text-sm font-black text-slate-100 uppercase tracking-widest mb-1.5">
-                {selectedServiceFilter !== 'all' ? (selectedServiceFilter === 'carWash' ? 'Car Wash' : selectedServiceFilter) : ''} History Empty
+                History Empty
               </h3>
               <p className="text-[10px] text-zinc-500 uppercase tracking-wider max-w-xs mx-auto leading-relaxed text-center">
-                You do not have any past completed or cancelled {selectedServiceFilter !== 'all' ? (selectedServiceFilter === 'carWash' ? 'car wash' : selectedServiceFilter) : ''} sessions under this account yet.
+                You do not have any past completed or cancelled sessions under this account yet.
               </p>
             </div>
           )
+        ) : filteredBookings.length === 0 ? (
+          <div className="bg-zinc-900 border border-zinc-800/60 rounded-[2.5rem] p-12 flex flex-col items-center justify-center relative overflow-hidden transition-all hover:border-zinc-750 text-center">
+            {/* Subtle background glow */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+            
+            <div className="w-12 h-12 bg-zinc-950 border border-zinc-800 rounded-2xl flex items-center justify-center shadow-lg mb-6 text-amber-500">
+              <SlidersHorizontal size={20} className="animate-pulse" />
+            </div>
+
+            <h3 className="text-sm font-black text-slate-100 uppercase tracking-widest mb-1.5">
+              No Matches Found
+            </h3>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-wider max-w-xs mx-auto leading-relaxed mb-6">
+              No results found matching your search term or active filters. Try adjusting your query.
+            </p>
+            
+            <button
+              onClick={() => {
+                setBookingSearchQuery('');
+                setSelectedServiceFilter('all');
+                setSelectedStatusFilter('all');
+              }}
+              className="bg-accent text-zinc-950 py-2.5 px-6 font-black text-[9px] uppercase tracking-widest rounded-xl hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] transition-all cursor-pointer"
+            >
+              Reset All Filters
+            </button>
+          </div>
         ) : (
           <motion.div layout className="space-y-4">
             <AnimatePresence mode="popLayout">
-              {myBookings
-                .filter(b => {
-                  const tabMatch = historyTab === 'active' 
-                    ? ['pending', 'ongoing'].includes(b.status)
-                    : ['completed', 'cancelled'].includes(b.status);
-                  const filterMatch = selectedServiceFilter === 'all' || b.type === selectedServiceFilter;
-                  return tabMatch && filterMatch;
-                })
+              {filteredBookings
                 .sort((a, b) => b.createdAt - a.createdAt)
                 .map((booking, idx) => (
                 <motion.div 
-                  key={booking.id ? `mybook-${booking.id}-${idx}` : `mybook-${idx}`}
+                  key={booking.id ? `mybook-id-${booking.id}-${idx}` : `mybook-idx-${idx}`}
                   layout
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -1353,6 +1479,7 @@ const Bookings = () => {
                 <AnimatePresence>
                   {showQR === booking.id && (
                     <motion.div 
+                      key={`qr-${booking.id}`}
                       initial={{ opacity: 0, scale: 0.95, height: 0 }}
                       animate={{ opacity: 1, scale: 1, height: 'auto' }}
                       exit={{ opacity: 0, scale: 0.95, height: 0 }}
@@ -1375,6 +1502,85 @@ const Bookings = () => {
                     </motion.div>
                   )}
                 </AnimatePresence>
+
+                {booking.type === 'carWash' && booking.status !== 'cancelled' && (
+                  <div className="mt-6 p-5 bg-zinc-950/40 rounded-3xl border border-zinc-850">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">
+                          Live Wash Progress
+                        </h4>
+                        {booking.bay && (
+                          <p className="text-[10px] font-bold text-zinc-500 uppercase mt-0.5">
+                            Assigned to: <span className="text-zinc-300 font-black">{booking.bay}</span>
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
+                        <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping" />
+                        <span className="text-[8px] font-black uppercase tracking-widest text-emerald-400 leading-none">
+                          {booking.status === 'completed' ? 'Finished' : booking.status === 'ongoing' ? 'Active' : 'In Queue'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar Track */}
+                    <div className="relative mt-8 mb-4">
+                      <div className="absolute top-4 left-0 w-full h-[3px] bg-zinc-800 rounded-full overflow-hidden z-0">
+                        <div 
+                          className="h-full bg-emerald-500 transition-all duration-1000 ease-out"
+                          style={{
+                            width: `${
+                              getActivePhaseIndex(booking) === 0 ? '12.5%' :
+                              getActivePhaseIndex(booking) === 1 ? '45%' :
+                              getActivePhaseIndex(booking) === 2 ? '75%' : '100%'
+                            }`
+                          }}
+                        />
+                      </div>
+
+                      {/* Circles / Steps */}
+                      <div className="relative flex justify-between z-10 w-full">
+                        {WASH_PHASES.map((phase, idx) => {
+                          const activeIndex = getActivePhaseIndex(booking);
+                          const isCompleted = activeIndex > idx || (activeIndex === 3 && idx === 3);
+                          const isActive = activeIndex === idx;
+
+                          return (
+                            <div key={phase.id} className="flex flex-col items-center">
+                              {/* Circle node */}
+                              <div 
+                                className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all duration-500 ${
+                                  isCompleted
+                                    ? 'bg-emerald-500 border-emerald-600 text-zinc-950 shadow-md shadow-emerald-500/20'
+                                    : isActive
+                                    ? 'bg-zinc-950 border-emerald-400 text-emerald-400 shadow-lg shadow-emerald-500/10 scale-110'
+                                    : 'bg-zinc-900 border-zinc-800 text-zinc-600'
+                                }`}
+                              >
+                                {isCompleted ? (
+                                  <Check className="w-4 h-4 stroke-[3px]" />
+                                ) : (
+                                  <span className="text-[10px] font-black">{idx + 1}</span>
+                                )}
+                              </div>
+                              {/* Label */}
+                              <span className={`text-[9.5px] font-black uppercase tracking-wider mt-2.5 transition-colors ${
+                                isActive ? 'text-emerald-400' : isCompleted ? 'text-slate-300' : 'text-zinc-600'
+                              }`}>
+                                {phase.label}
+                              </span>
+                              {/* Description subtext */}
+                              <span className="text-[7.5px] text-zinc-600 font-bold uppercase tracking-widest mt-0.5 hidden md:block">
+                                {phase.desc}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
 
                  {booking.vehicleNumber && (
@@ -1430,7 +1636,7 @@ const Bookings = () => {
       {/* Cancellation Confirmation Modal */}
       <AnimatePresence>
         {bookingToCancel && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div key="cancellation-modal-container" className="fixed inset-0 z-50 flex items-center justify-center p-4">
             {/* Backdrop overlay */}
             <motion.div
               initial={{ opacity: 0 }}

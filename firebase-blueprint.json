@@ -35,6 +35,7 @@
         "notes": { "type": "string" },
         "status": { "type": "string", "enum": ["pending", "ongoing", "completed", "cancelled"] },
         "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+        "washPhase": { "type": "string", "enum": ["Queued", "In Progress", "Detailing", "Done"] },
         "price": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" }
       },

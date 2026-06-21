@@ -1063,14 +1063,20 @@ const AdminDashboard = () => {
   const handleStatusUpdate = async (id: string, status: BookingStatus, extraData?: any) => {
     if (status === 'completed') {
       setSuccessAnimationId(id);
+      const bObj = bookings.find(b => b.id === id);
+      const isCarWash = bObj?.type === 'carWash';
       await bookingService.updateBookingStatus(id, status, { 
         ...extraData,
-        paymentStatus: extraData?.paymentStatus || 'paid' // Default to paid on completion if not specified
+        paymentStatus: extraData?.paymentStatus || 'paid', // Default to paid on completion if not specified
+        ...(isCarWash ? { washPhase: 'Done' } : {})
       });
       setTimeout(() => setSuccessAnimationId(null), 1500);
     } else if (status === 'ongoing') {
+      const bObj = bookings.find(b => b.id === id);
+      const isCarWash = bObj?.type === 'carWash';
       await bookingService.updateBookingStatus(id, status, {
         checkedInAt: Date.now(),
+        ...(isCarWash ? { washPhase: 'In Progress' } : {}),
         ...extraData
       });
     } else {
@@ -1881,7 +1887,10 @@ const AdminDashboard = () => {
                   {scannedBooking.status === 'pending' && (
                     <button
                       onClick={async () => {
-                        await bookingService.updateBookingStatus(scannedBooking.id!, 'ongoing', { checkedInAt: Date.now() });
+                        await bookingService.updateBookingStatus(scannedBooking.id!, 'ongoing', { 
+                          checkedInAt: Date.now(),
+                          ...(scannedBooking.type === 'carWash' ? { washPhase: 'In Progress' } : {})
+                        });
                         playVoice(`Session started for ${scannedBooking.userName}. Welcome to Hub Station!`, 'Zephyr');
                         // Logs
                         const logId = Math.random().toString(36).substring(2, 9);
@@ -1901,7 +1910,9 @@ const AdminDashboard = () => {
                   {scannedBooking.status === 'ongoing' && (
                     <button
                       onClick={async () => {
-                        await bookingService.updateBookingStatus(scannedBooking.id!, 'completed');
+                        await bookingService.updateBookingStatus(scannedBooking.id!, 'completed', {
+                          ...(scannedBooking.type === 'carWash' ? { washPhase: 'Done' } : {})
+                        });
                         playVoice(`Session completed for ${scannedBooking.userName}. Thank you!`, 'Zephyr');
                         // Logs
                         const logId = Math.random().toString(36).substring(2, 9);
@@ -2088,7 +2099,7 @@ const AdminDashboard = () => {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {bookings.filter(b => b.status === 'ongoing').map((booking, idx) => (
-                  <div key={booking.id ? `ongoing-${booking.id}-${idx}` : `ongoing-${idx}`} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between min-h-[12.5rem] h-auto hover:border-accent/40 transition-colors">
+                  <div key={booking.id ? `ongoing-id-${booking.id}-${idx}` : `ongoing-idx-${idx}`} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between min-h-[12.5rem] h-auto hover:border-accent/40 transition-colors">
                     <div className="absolute top-0 right-0 p-4">
                       <span className="text-[8px] font-black uppercase tracking-widest bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2.5 py-1 rounded-full flex items-center gap-1.5">
                         <span className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />
@@ -2136,7 +2147,7 @@ const AdminDashboard = () => {
               </div>
               <div className="space-y-3">
                 {bookings.filter(b => b.status === 'pending').slice(0, 8).map((booking, idx) => (
-                  <div key={booking.id ? `pending-${booking.id}-${idx}` : `pending-${idx}`} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-zinc-700 transition-colors">
+                  <div key={booking.id ? `pending-id-${booking.id}-${idx}` : `pending-idx-${idx}`} className="bg-zinc-900 border border-zinc-805 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-zinc-700 transition-colors">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-400">
                         {getServiceIcon(booking.type, 20)}
@@ -2383,7 +2394,7 @@ const AdminDashboard = () => {
       <div className="grid grid-cols-1 gap-4">
         {filteredBookings.map((booking, idx) => (
           <motion.div 
-            key={booking.id ? `filtered-${booking.id}-${idx}` : `filtered-${idx}`}
+            key={booking.id ? `filtered-id-${booking.id}-${idx}` : `filtered-idx-${idx}`}
             layout
             className={`bg-zinc-900 rounded-[2.5rem] p-8 border transition-all shadow-sm relative overflow-hidden ${
               selectedBookings.includes(booking.id!) ? 'border-accent ring-1 ring-accent/30' : 'border-zinc-800'
@@ -2492,15 +2503,37 @@ const AdminDashboard = () => {
                     </button>
                   )}
                   {booking.status === 'ongoing' && (
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {booking.type === 'carWash' && (
-                        <button 
-                          onClick={() => setAssignBayBookingId(booking.id!)}
-                          className="p-3 bg-blue-500/10 text-blue-500 rounded-xl hover:bg-blue-500 hover:text-white transition-all border border-blue-500/20"
-                          title="Assign/Change Bay"
-                        >
-                          <Car size={20} />
-                        </button>
+                        <>
+                          <button 
+                            onClick={() => setAssignBayBookingId(booking.id!)}
+                            className="p-3 bg-blue-500/10 text-blue-500 rounded-xl hover:bg-blue-500 hover:text-white transition-all border border-blue-500/20"
+                            title="Assign/Change Bay"
+                          >
+                            <Car size={20} />
+                          </button>
+                          
+                          <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+                            {(['In Progress', 'Detailing'] as const).map((phase) => {
+                              const isActive = booking.washPhase === phase || (!booking.washPhase && phase === 'In Progress');
+                              return (
+                                <button
+                                  key={phase}
+                                  onClick={() => handleStatusUpdate(booking.id!, 'ongoing', { washPhase: phase })}
+                                  className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                                    isActive
+                                      ? 'bg-accent text-zinc-950 font-black shadow-md'
+                                      : 'text-zinc-500 hover:text-slate-200'
+                                  }`}
+                                  title={`Move to ${phase}`}
+                                >
+                                  {phase}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>
                       )}
                     </div>
                   )}

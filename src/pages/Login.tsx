@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { signInWithGoogle } from '../services/firebase';
 import { LogIn, ArrowRight } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
+import hubLogo from '../assets/images/hub_station_logo_glow_1781636017260.jpg';
 
 const Login = () => {
   const { user } = useAuth();
@@ -19,6 +20,18 @@ const Login = () => {
       >
         <div className="absolute top-0 left-0 w-full h-1 bg-accent opacity-50" />
         
+        {/* Logo Container */}
+        <div className="flex justify-center mb-6">
+          <div className="w-16 h-16 rounded-[1.5rem] overflow-hidden border border-zinc-800 bg-zinc-950 p-1 flex items-center justify-center">
+            <img 
+              src={hubLogo} 
+              alt="Hub Station Logo" 
+              className="w-full h-full object-cover rounded-[1.125rem]"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        </div>
+
         <h2 className="text-3xl font-black mb-4 uppercase tracking-tighter text-slate-100 italic">Welcome</h2>
         <p className="text-zinc-500 mb-12 leading-relaxed font-medium">
           Log in with your Google account to access premium hub features, track your orders, and manage reservations.

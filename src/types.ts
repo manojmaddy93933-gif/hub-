@@ -51,6 +51,7 @@ export interface Booking {
   paymentMethod?: 'upi' | 'cash' | 'card';
   checkedInAt?: number;
   bay?: string;
+  washPhase?: 'Queued' | 'In Progress' | 'Detailing' | 'Done';
   createdAt: number;
 }
 
